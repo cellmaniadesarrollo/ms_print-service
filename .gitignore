@@ -1,12 +1,11 @@
-# 5. Crea un .gitignore básico si no lo tienes (para no subir basura)
-# Puedes copiar y pegar estas líneas una por una o crear el archivo manualmente
-echo "__pycache__/" > .gitignore
-echo "*.pyc" >> .gitignore
-echo "*.pyo" >> .gitignore
-echo "build/" >> .gitignore
-echo "dist/" >> .gitignore           # ← importante: NO subas los .exe grandes
-echo "*.spec" >> .gitignore
-echo "*.log" >> .gitignore
-echo "*.env" >> .gitignore 
+ 
+__pycache__/
+*.pyc
+*.pyo
+build/
+dist/           
+*.spec
+*.log
+*.env 
 
  
