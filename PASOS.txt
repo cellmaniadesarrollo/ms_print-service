@@ -1,0 +1,19 @@
+=========================================
+GUÍA DE ARRANQUE RÁPIDO (ESTILO NESTJS)
+=========================================
+
+1. INSTALAR DEPENDENCIAS (La primera vez o al clonar):
+   > poetry install
+
+2. ARRANCAR EN DESARROLLO (Equivalente a npm run start:dev):
+   > poetry run dev
+
+3. AGREGAR NUEVAS LIBRERÍAS (Equivalente a npm install):
+   > poetry add nombre-libreria
+
+4. ENTRAR AL ENTORNO VIRTUAL (Si quieres usar la terminal manual):
+   > poetry shell
+
+NOTAS: 
+- No necesitas activar el .venv manualmente, Poetry lo hace por ti al ejecutar 'run'.
+- La configuración de puertos y SSL está en el archivo .env.

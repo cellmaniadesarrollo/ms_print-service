@@ -1,0 +1,406 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                     GUÍA DE CONFIGURACIÓN — config.json                    ║
+║                         Print Service — Python/FastAPI                     ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+Ubicación del archivo: raíz del proyecto (al mismo nivel que la carpeta app/)
+
+    raíz/
+    ├── config.json       ← este archivo
+    ├── app/
+    │   ├── config.py
+    │   └── printer/
+    └── assets/
+        └── analisis.png  (opcional)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ESTRUCTURA COMPLETA CON TODOS LOS CAMPOS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+{
+  "connection": "network",
+  "network": {
+    "ip": "192.168.0.101",
+    "port": 9100,
+    "timeout": 10
+  },
+  "usb": {
+    "vid": null,
+    "pid": null
+  },
+  "paperWidth": 80,
+  "encoding": "GB18030",
+  "printerName": "Rongta Network",
+
+  "ticket": {
+    "workshopLayout": {
+      "totalWidthOverride": null,
+      "textPct": 80
+    },
+    "footer": {
+      "lines": [
+        "- Costo minimo revision: $4 (puede variar)",
+        "- En la reparacion se utilizan materiales,",
+        "  herramientas y tiempo.",
+        "- Tiempo maximo para retirar",
+        "  el dispositivo: 3 meses."
+      ]
+    },
+    "promotions": {
+      "wednesday": "*** HOY MICA GRATIS ***"
+    },
+    "qrBaseUrl": "https://tuweb.com/orden"
+  },
+
+  "features": {
+    "printAnalysisImage": true,
+    "printQr": true,
+    "printPatternOnCustomerTicket": true,
+    "printWednesdayPromo": true
+  }
+}
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  SECCIÓN: CONEXIÓN
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+"connection"
+    Tipo    : string
+    Valores : "network" | "usb"
+    Ejemplo : "connection": "network"
+
+    Define cómo se conecta físicamente la impresora.
+    Según el valor, se usa la sección "network" o "usb".
+
+─────────────────────────────────────────────────────────────────────────────
+OPCIÓN A — Red (connection = "network")
+─────────────────────────────────────────────────────────────────────────────
+
+"network.ip"
+    Tipo      : string  — OBLIGATORIO cuando connection="network"
+    Ejemplo   : "ip": "192.168.0.101"
+    Descripción: Dirección IP de la impresora en la red local.
+    Cómo encontrarla: imprime una página de prueba desde la impresora,
+                      o revisa tu router en la lista de dispositivos.
+
+"network.port"
+    Tipo    : número
+    Default : 9100
+    Ejemplo : "port": 9100
+    Descripción: Puerto TCP de la impresora. El estándar ESC/POS es 9100.
+    Cuándo cambiarlo: casi nunca. Solo si tu impresora usa un puerto diferente.
+
+"network.timeout"
+    Tipo    : número (segundos)
+    Default : 10
+    Ejemplo : "timeout": 10
+    Descripción: Tiempo máximo esperando respuesta de la impresora.
+    Aumentar si: la impresora está en otra red o con VPN (latencia alta).
+    Reducir si:  quieres que los errores se detecten más rápido.
+
+─────────────────────────────────────────────────────────────────────────────
+OPCIÓN B — USB (connection = "usb")
+─────────────────────────────────────────────────────────────────────────────
+
+"usb.vid"
+    Tipo      : número  — OBLIGATORIO cuando connection="usb"
+    Ejemplo   : "vid": 1208    (o en hex: 0x04B8 para Epson)
+    Descripción: Vendor ID del dispositivo USB.
+    Cómo encontrarlo (Windows): Administrador de dispositivos → propiedades
+                                 del dispositivo USB → Detalles → ID de hardware
+    Cómo encontrarlo (Linux)  : lsusb → busca tu impresora → número antes de ":"
+
+"usb.pid"
+    Tipo      : número  — OBLIGATORIO cuando connection="usb"
+    Ejemplo   : "pid": 514
+    Descripción: Product ID del dispositivo USB.
+    (Mismo procedimiento que vid para encontrarlo)
+
+    Ejemplos comunes:
+        Epson TM-T88V   → vid: 1208,  pid: 514    (0x04B8, 0x0202)
+        Epson TM-T20    → vid: 1208,  pid: 9226   (0x04B8, 0x240A)
+        Rongta RP-80    → vid: 26728, pid: 514
+        Bixolon SRP-350 → vid: 1317,  pid: 32836
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  SECCIÓN: PAPEL Y ENCODING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+"paperWidth"
+    Tipo    : número (milímetros)
+    Valores : 58 | 80
+    Default : 80
+    Ejemplo : "paperWidth": 58
+
+    Define el ancho del rollo de papel. El sistema lo convierte a píxeles
+    automáticamente (203 DPI estándar):
+
+        58 mm  →  384 píxeles  (papel angosto, común en cajeros y kioscos)
+        80 mm  →  512 píxeles  (papel ancho, estándar en comercios)
+
+    ERROR COMÚN: "Image width is too large (N > 512)"
+        Solución: baja paperWidth a 58, o usa ticket.workshopLayout.totalWidthOverride
+                  con un valor menor (ej: 384 o 480).
+
+"encoding"
+    Tipo    : string
+    Default : "utf-8"
+    Ejemplo : "encoding": "GB18030"
+
+    Encoding de caracteres de la impresora. Depende del firmware.
+
+    Valores comunes según marca:
+        "GB18030"   → Rongta, Xprinter, mayoría de marcas chinas
+        "utf-8"     → Epson moderna, Star Micronics
+        "cp850"     → Epson antigua, impresoras europeas
+        "cp437"     → PC estándar USA
+        "latin-1"   → Epson América Latina
+
+    Síntoma de encoding incorrecto: caracteres raros donde deberían ir tildes o ñ.
+
+"printerName"
+    Tipo    : string
+    Ejemplo : "printerName": "Rongta Network"
+    Descripción: Solo es un label informativo. No afecta el funcionamiento.
+                 Útil para saber qué impresora tiene configurada cada instalación.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  SECCIÓN: ticket
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+"ticket.workshopLayout.totalWidthOverride"
+    Tipo    : número | null
+    Default : null  (usa el ancho calculado desde paperWidth)
+    Ejemplo : "totalWidthOverride": 480
+
+    Ancho en píxeles de la imagen del ticket interno (el del taller).
+    Cuando es null, usa el valor automático de paperWidth.
+
+    Cuándo usar un valor fijo:
+        - Si quieres que la imagen sea más angosta que el papel para dejar márgenes
+        - Si paperWidth da error de ancho excedido en tu modelo específico
+
+    Referencia:
+        null  → usa 384 px (papel 58mm) o 512 px (papel 80mm) automáticamente
+        384   → imagen angosta (siempre seguro en papel 58mm)
+        480   → imagen mediana (probar en papel 58mm)
+        512   → imagen ancha (máximo seguro en papel 80mm)
+
+"ticket.workshopLayout.textPct"
+    Tipo    : número (porcentaje, 1-99)
+    Default : 80
+    Ejemplo : "textPct": 85
+
+    Porcentaje del ancho de la imagen reservado para el texto.
+    El resto se usa para la imagen del patrón.
+
+    Visualización:
+        textPct: 75  →  [═══ texto 75% ═══][patrón 25%]
+        textPct: 80  →  [════ texto 80% ════][patrón 20%]
+        textPct: 85  →  [═════ texto 85% ═════][patrón 15%]
+
+    Cuándo aumentar: si el texto se corta (IMEI largo, modelo largo)
+    Cuándo reducir:  si quieres el patrón más grande y visible
+
+"ticket.footer.lines"
+    Tipo    : array de strings
+    Ejemplo :
+        "lines": [
+          "- Revision minima: $5",
+          "- Garantia: 30 dias en reparacion"
+        ]
+
+    Texto que aparece al pie del ticket del CLIENTE.
+    Cada string es una línea. Puedes usar espacios al inicio para indentar.
+
+    Límite recomendado: ~45 caracteres por línea en papel 80mm.
+    Si una línea es muy larga, córtala en dos strings en el array.
+
+"ticket.promotions.wednesday"
+    Tipo    : string
+    Default : "*** HOY MICA GRATIS ***"
+    Ejemplo : "wednesday": "2x1 EN PROTECTORES HOY"
+
+    Texto de la promoción que se imprime los miércoles.
+    Para desactivar sin tocar features, ponlo vacío: "wednesday": ""
+    También se puede desactivar con features.printWednesdayPromo = false.
+
+"ticket.qrBaseUrl"
+    Tipo    : string (URL sin slash al final)
+    Ejemplo : "qrBaseUrl": "https://mitienda.com/seguimiento"
+
+    URL base para construir el link del QR de seguimiento.
+    El sistema agrega automáticamente /{order_number} al final.
+
+    Resultado: https://mitienda.com/seguimiento/ORD-2024-001
+
+    Si el payload del POST ya incluye el campo "qr_url",
+    ese valor tiene prioridad sobre qrBaseUrl.
+
+    Para desactivar el QR completamente: usa features.printQr = false
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  SECCIÓN: features (activar/desactivar secciones del ticket)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Todos son true/false. Permiten activar o desactivar secciones enteras
+sin borrar código. Útil cuando diferentes clientes tienen diferentes necesidades.
+
+"features.printAnalysisImage"
+    Default : true
+    Descripción: Imprime la imagen assets/analisis.png en el ticket del cliente.
+    false si: el cliente no tiene esa imagen, o no quiere mostrarla.
+
+"features.printQr"
+    Default : true
+    Descripción: Imprime el código QR de seguimiento en el ticket del cliente.
+    false si: no tienes sistema de seguimiento online.
+
+"features.printPatternOnCustomerTicket"
+    Default : true
+    Descripción: Imprime el patrón de desbloqueo en texto en el ticket del cliente.
+                 Ejemplo: "Patron de desbloqueo: 1235"
+    false si: el cliente prefiere no ver su propio patrón en el papel.
+    Nota: el patrón SIEMPRE aparece como imagen en el ticket del taller,
+          este flag solo afecta el ticket del cliente.
+
+"features.printWednesdayPromo"
+    Default : true
+    Descripción: Activa la detección del día miércoles para imprimir la promo.
+    false si: ya no hay promo o se maneja desde otra parte.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  EJEMPLOS DE CONFIGURACIÓN POR CASO DE USO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+──────────────────────────────────────
+CASO 1: Papel 58mm, sin QR, sin imagen
+──────────────────────────────────────
+{
+  "connection": "network",
+  "network": { "ip": "192.168.1.50", "port": 9100, "timeout": 10 },
+  "paperWidth": 58,
+  "encoding": "GB18030",
+  "printerName": "Rongta 58mm",
+  "ticket": {
+    "workshopLayout": { "totalWidthOverride": null, "textPct": 80 },
+    "footer": {
+      "lines": ["- Revison minima: $3", "- Retiro max: 2 meses."]
+    },
+    "promotions": { "wednesday": "" },
+    "qrBaseUrl": ""
+  },
+  "features": {
+    "printAnalysisImage": false,
+    "printQr": false,
+    "printPatternOnCustomerTicket": true,
+    "printWednesdayPromo": false
+  }
+}
+
+──────────────────────────────────────
+CASO 2: Papel 80mm completo, USB
+──────────────────────────────────────
+{
+  "connection": "usb",
+  "usb": { "vid": 1208, "pid": 514 },
+  "paperWidth": 80,
+  "encoding": "utf-8",
+  "printerName": "Epson TM-T88V USB",
+  "ticket": {
+    "workshopLayout": { "totalWidthOverride": null, "textPct": 80 },
+    "footer": {
+      "lines": [
+        "- Costo minimo revision: $4 (puede variar)",
+        "- Garantia 30 dias en piezas instaladas.",
+        "- Tiempo maximo de retiro: 3 meses."
+      ]
+    },
+    "promotions": { "wednesday": "*** PROTECTOR GRATIS HOY ***" },
+    "qrBaseUrl": "https://service.miempresa.com/orden"
+  },
+  "features": {
+    "printAnalysisImage": true,
+    "printQr": true,
+    "printPatternOnCustomerTicket": true,
+    "printWednesdayPromo": true
+  }
+}
+
+──────────────────────────────────────
+CASO 3: Imagen más ancha (override)
+──────────────────────────────────────
+Si paperWidth=58 pero quieres la imagen del taller más ancha:
+
+  "workshopLayout": {
+    "totalWidthOverride": 480,   ← fuerza 480px en lugar de 384px
+    "textPct": 82
+  }
+
+Si ves error "Image width is too large": baja totalWidthOverride a 370 o 360.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ERRORES COMUNES Y SOLUCIONES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+ERROR: "Image width is too large (N > 512)"
+    Causa:   total_width supera el límite de la impresora
+    Solución A: baja paperWidth de 80 a 58
+    Solución B: pon totalWidthOverride en 384 o menos
+
+ERROR: "No se encontró config.json"
+    Causa:   el archivo no está en la raíz del proyecto
+    Solución: verifica que config.json esté al mismo nivel que la carpeta app/
+
+ERROR: "network.ip es requerido"
+    Causa:   connection="network" pero ip está vacío o null
+    Solución: pon la IP de tu impresora en network.ip
+
+ERROR: "connection timeout" al imprimir
+    Causa:   la impresora no responde en el tiempo configurado
+    Solución A: aumenta network.timeout a 20 o 30
+    Solución B: verifica que la IP sea correcta y la impresora esté encendida
+
+ERROR: caracteres extraños (□□□ o ???) en el ticket
+    Causa:   encoding incorrecto
+    Solución: prueba con "GB18030" si es marca china, "cp850" si es Epson antigua
+
+ERROR: "usb.vid y usb.pid son requeridos"
+    Causa:   connection="usb" pero vid o pid son null
+    Solución: encuentra los valores con lsusb (Linux) o Administrador de
+              dispositivos (Windows) y ponlos en usb.vid y usb.pid
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  RESUMEN RÁPIDO DE CAMPOS POR SECCIÓN
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+┌─────────────────────────────────┬────────────┬─────────────────────────────┐
+│ Campo                           │ Default    │ Descripción corta           │
+├─────────────────────────────────┼────────────┼─────────────────────────────┤
+│ connection                      │ "network"  │ "network" o "usb"           │
+│ network.ip                      │ —          │ IP de la impresora          │
+│ network.port                    │ 9100       │ Puerto TCP                  │
+│ network.timeout                 │ 10         │ Segundos de espera          │
+│ usb.vid                         │ null       │ Vendor ID USB               │
+│ usb.pid                         │ null       │ Product ID USB              │
+│ paperWidth                      │ 80         │ Ancho papel en mm (58/80)   │
+│ encoding                        │ "utf-8"    │ Encoding de la impresora    │
+│ printerName                     │ —          │ Label informativo           │
+│ ticket.workshopLayout           │            │                             │
+│   .totalWidthOverride           │ null       │ Ancho fijo px (null=auto)   │
+│   .textPct                      │ 80         │ % ancho para texto (0-99)   │
+│ ticket.footer.lines             │ [...]      │ Texto al pie del ticket     │
+│ ticket.promotions.wednesday     │ "***..."   │ Texto promo miércoles       │
+│ ticket.qrBaseUrl                │ ""         │ URL base para QR            │
+│ features.printAnalysisImage     │ true       │ Imagen analisis.png         │
+│ features.printQr                │ true       │ Código QR                   │
+│ features.printPatternOnCustomer │ true       │ Patrón en texto (cliente)   │
+│ features.printWednesdayPromo    │ true       │ Promo del miércoles         │
+└─────────────────────────────────┴────────────┴─────────────────────────────┘

@@ -1,0 +1,38 @@
+{
+  "connection": "network",
+  "network": {
+    "ip": "192.168.10.161",
+    "port": 9100,
+    "timeout": 10
+  },
+  "usb": {
+    "vid": null,
+    "pid": null
+  },
+  "paperWidth": 80,
+  "encoding": "GB18030",
+  "printerName": "Rongta Network",
+  "ticket": {
+    "workshopLayout": {
+      "totalWidthOverride": null,
+      "textPct": 80
+    },
+    "footer": {
+      "lines": [
+        "- Costo minimo revision: $4 (puede variar)",
+        "- En la reparacion se utilizan materiales, herramientas y tiempo.",
+        "- Tiempo maximo para retirar el dispositivo: 3 meses."
+      ]
+    },
+    "promotions": {
+      "wednesday": "*** HOY MICA GRATIS ***"
+    },
+    "qrBaseUrl": "https://ordenes.teamcellmania.com/device-query"
+  },
+  "features": {
+    "printAnalysisImage": true,
+    "printQr": true,
+    "printPatternOnCustomerTicket": true,
+    "printWednesdayPromo": true
+  }
+}

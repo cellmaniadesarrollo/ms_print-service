@@ -1,0 +1,31 @@
+[project]
+name = "print-service-public-py"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "cellmaniadesarrollo",email = "christians9210023.tcm@gmail.com"}
+] 
+requires-python = ">=3.13,<3.15" 
+dependencies = [
+    "fastapi[standard] (>=0.133.1,<0.134.0)",
+    "uvicorn[standard] (>=0.41.0,<0.42.0)",
+    "pydantic (>=2.12.5,<3.0.0)",
+    "python-dotenv (>=1.2.1,<2.0.0)",
+    "python-escpos[all] (>=3.1,<4.0)",
+    "pillow (>=12.1.1,<13.0.0)"
+]
+
+[tool.poetry]
+packages = [{include = "app"}]
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+[tool.poetry.scripts]
+dev = "app.main:start"
+[dependency-groups]
+dev = [
+    "pystray (>=0.19.5,<0.20.0)",
+    "pyinstaller (>=6.19.0,<7.0.0)",
+    "pywin32 (>=311,<312)"
+]
