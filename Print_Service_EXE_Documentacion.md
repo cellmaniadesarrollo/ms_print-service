@@ -128,6 +128,7 @@ Desde la raíz del proyecto:
 poetry run pyinstaller `
     --onefile `
     --noconsole `
+    --name "PrintService" `
     --add-data "certs;certs" `
     --add-data "icon.png;." `
     --collect-data escpos `

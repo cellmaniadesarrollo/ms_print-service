@@ -124,7 +124,7 @@ def _extract(data: dict, qr_base_url: str) -> tuple[dict | None, str | None]:
 
         # Detalles
         "motivo":   (data.get("detalleIngreso") or "").strip().upper(),
-        "patron":   data.get("patron",   "").strip(),
+        "patron": (data.get("patron") or "").strip(),
         "password": data.get("password", "").strip(),
         "qr_url":   qr_url,
 
