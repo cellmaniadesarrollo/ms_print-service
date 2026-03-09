@@ -1,153 +1,136 @@
 # app/printer/printer_service.py
 """
-Orquestador del servicio de impresión.
+Orquestador del servicio de impresión de tickets.
 
-Responsabilidades (en orden de ejecución):
+Flujo principal:
     1. Validar campos mínimos del payload
-    2. Extraer y normalizar los datos del JSON
-    3. Abrir conexión con la impresora
+    2. Normalizar y extraer datos útiles
+    3. Conectar con la impresora
     4. Imprimir ticket cliente + ticket taller
-    5. Manejar errores y retornar respuesta
+    5. Manejar errores y retornar respuesta estandarizada
 
-Flujo completo:
-    POST /print
-        → PrinterService.print_receipt(data)
-            → _validate(data)           devuelve error o None
-            → _extract(data)            devuelve dict normalizado o error
-            → open_printer(config)      abre la conexión
-            → print_customer_ticket()   ticket del cliente
-            → print_workshop_ticket()   ticket del taller
+Uso típico (en endpoint):
+    printer_service.print_receipt(payload_json) → {"success": bool, "message": str}
 """
 
 from datetime import datetime
+import traceback
 
 from app.config import AppConfig
 from app.printer.connection import open_printer
 from app.printer.ticket_builder import print_customer_ticket, print_workshop_ticket
 
-from escpos.exceptions import Error, DeviceNotFoundError
+from escpos.exceptions import Error as EscposError, DeviceNotFoundError
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Campos obligatorios en el payload
-# ─────────────────────────────────────────────────────────────────────────────
+# Campos estrictamente necesarios en el payload
+REQUIRED_FIELDS = [
+    "order_number",
+    "entry_date",
+    "customer",
+    "device",
+    "public_id",
+]
 
-REQUIRED_FIELDS = ["order_number", "entry_date", "customer", "device", "public_id"]
+
+def safe_str(value: any) -> str:
+    """Convierte a string, quita espacios sobrantes y maneja None"""
+    return str(value or "").strip()
 
 
 def _validate(data: dict) -> str | None:
     """
-    Verifica que el payload tenga los campos mínimos para imprimir.
-
-    Returns:
-        str  con mensaje de error si algo falta
-        None si todo está bien
+    Verifica que el payload tenga la estructura mínima esperada.
+    Retorna mensaje de error o None si está correcto.
     """
-    if not data:
-        return "No se recibieron datos para imprimir."
+    if not data or not isinstance(data, dict):
+        return "No se recibieron datos válidos para imprimir."
 
-    missing = [f for f in REQUIRED_FIELDS if not data.get(f)]
+    missing = [f for f in REQUIRED_FIELDS if f not in data or not data[f]]
     if missing:
         return f"Faltan campos obligatorios: {', '.join(missing)}"
 
-    if not (data.get("company") or {}).get("name", "").strip():
-        return "Falta company.name en los datos."
+    company_name = safe_str((data.get("company") or {}).get("name"))
+    if not company_name:
+        return "Falta o está vacío: company.name"
 
     return None
 
 
 def _extract(data: dict, qr_base_url: str) -> tuple[dict | None, str | None]:
     """
-    Extrae y normaliza los campos del payload JSON.
-
-    Centraliza la transformación del JSON crudo a un dict limpio
-    que ticket_builder.py puede usar directamente sin conocer
-    la estructura original del payload.
-
-    Args:
-        data:         payload JSON crudo del endpoint
-        qr_base_url:  URL base para construir el link del QR
-                      (viene de config.json → ticket.qrBaseUrl)
-
-    Returns:
-        (dict_normalizado, None)  si todo fue bien
-        (None, mensaje_error)     si hubo un error
+    Transforma el payload crudo en un diccionario limpio y normalizado
+    que ticket_builder puede usar directamente.
     """
-    entry_date_raw = data["entry_date"]
+    # Parseo de fecha de ingreso
+    entry_date_raw = data.get("entry_date", "")
     try:
+        # Soporta ISO con Z (UTC) → lo convertimos a objeto datetime
         entry_dt = datetime.fromisoformat(entry_date_raw.replace("Z", "+00:00"))
-    except Exception:
-        return None, f"entry_date con formato inválido: '{entry_date_raw}'"
+    except (ValueError, TypeError) as e:
+        return None, f"Formato inválido en entry_date: '{entry_date_raw}' → {e}"
 
-    company    = data.get("company")   or {}
-    customer   = data.get("customer")  or {}
-    device     = data.get("device")    or {}
-    created_by = data.get("createdBy") or {}
+    # Accesos seguros a estructuras anidadas
+    company    = data.get("company")    or {}
+    customer   = data.get("customer")   or {}
+    device     = data.get("device")     or {}
+    created_by = data.get("createdBy")  or {}
     contacts   = customer.get("contacts") or []
 
-    # Modelo del dispositivo puede llegar como objeto o como string
-    model_info   = device.get("model") or {}
+    # Modelo del equipo (puede venir como str o como dict)
+    model_info = device.get("model") or {}
     device_model = (
-        model_info.get("models_name") if isinstance(model_info, dict) else str(model_info)
-    ).strip()
+        model_info.get("models_name") if isinstance(model_info, dict) else safe_str(model_info)
+    )
 
-    imeis      = device.get("imeis") or [{}]
-    order_num  = data["order_number"]
-    public_id = (data.get("public_id") or "").strip()
-    # Construir URL del QR: usa qr_url del payload si viene, si no construye con base
-    qr_url = (data.get("qr_url") or "").strip()
-    if not qr_url and qr_base_url:
-        qr_url = f"{qr_base_url}/{public_id}"
+    imeis = device.get("imeis") or [{}]
 
+    public_id = safe_str(data.get("public_id"))
+    qr_url = safe_str(data.get("qr_url"))
+    if not qr_url and qr_base_url and public_id:
+        qr_url = f"{qr_base_url.rstrip('/')}/{public_id}"
+
+    # Construimos el diccionario final normalizado
     return {
-        # Orden
-        "order_number":   order_num,
+        # Orden / identificación
+        "order_number":   safe_str(data.get("order_number")),
         "entry_dt":       entry_dt,
         "entry_date_str": entry_dt.strftime("%d/%m/%Y %H:%M"),
-        "public_id": public_id,
+        "public_id":      public_id,
+        "qr_url":         qr_url,
+
         # Empresa
-        "company_name":  company.get("name", "").strip().upper(),
+        "company_name":   company.get("name", "").strip().upper(),
 
         # Cliente
-        "customer_name": (
-            f"{customer.get('firstName','').strip()} "
-            f"{customer.get('lastName','').strip()}"
+        "customer_name":  (
+            f"{safe_str(customer.get('firstName'))} "
+            f"{safe_str(customer.get('lastName'))}"
         ).strip().upper(),
-        "customer_ci":   customer.get("idNumber", ""),
-        "primary_phone": next(
-            (c.get("value") for c in contacts if c.get("isPrimary")), ""
+        "customer_ci":    safe_str(customer.get("idNumber")),
+        "primary_phone":  next(
+            (safe_str(c.get("value")) for c in contacts if c.get("isPrimary")), ""
         ),
 
-        # Dispositivo
-        "device_model": device_model,
-        "imei":         imeis[0].get("imei_number", ""),
+        # Equipo
+        "device_model":   device_model,
+        "imei":           safe_str(imeis[0].get("imei_number") if imeis else ""),
 
-        # Detalles
-        "motivo":   (data.get("detalleIngreso") or "").strip().upper(),
-        "patron": (data.get("patron") or "").strip(),
-        "password": data.get("password", "").strip(),
-        "qr_url":   qr_url,
+        # Detalles del ingreso
+        "motivo":         safe_str(data.get("detalleIngreso")).upper(),
+        "patron":         safe_str(data.get("patron")),
+        "password":       safe_str(data.get("password")),
 
-        # Técnico
-        "received_by":    created_by.get("first_name", "").strip(),
-        "received_phone": created_by.get("phone",       "").strip(),
+        # Quién recibió
+        "received_by":    safe_str(created_by.get("first_name")),
+        "received_phone": safe_str(created_by.get("phone")),
     }, None
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Servicio principal
-# ─────────────────────────────────────────────────────────────────────────────
-
 class PrinterService:
     """
-    Orquesta el proceso completo de impresión.
-
-    Se instancia una sola vez al arrancar la app (singleton en main.py),
-    recibiendo AppConfig como dependencia (inyección de dependencias).
-
-    Uso en main.py:
-        config          = load_config()
-        printer_service = PrinterService(config)
+    Servicio que orquesta la impresión de tickets.
+    Se instancia una vez al iniciar la aplicación.
     """
 
     def __init__(self, config: AppConfig):
@@ -155,55 +138,57 @@ class PrinterService:
 
     def print_receipt(self, data: dict) -> dict:
         """
-        Punto de entrada público. Valida, extrae e imprime.
-
-        Args:
-            data: payload JSON del endpoint POST /print
+        Punto de entrada principal para imprimir tickets.
 
         Returns:
-            {"success": True,  "message": "..."}
-            {"success": False, "message": "..."}
+            dict con formato:
+            {"success": True,  "message": "Ticket impreso con éxito"}
+            {"success": False, "message": "explicación del error"}
         """
-        # 1. Validar campos obligatorios
+        # ── 1. Validación rápida ────────────────────────────────────────
         error = _validate(data)
         if error:
             return {"success": False, "message": error}
 
-        # 2. Extraer y normalizar — pasamos qr_base_url desde config
+        # ── 2. Extracción y normalización ───────────────────────────────
         extracted, error = _extract(data, self.config.ticket.qr_base_url)
         if error:
             return {"success": False, "message": error}
 
-        # 3. Conectar e imprimir
+        # ── 3. Impresión real ───────────────────────────────────────────
         printer = None
         try:
             printer = open_printer(self.config)
 
-            printer._raw(b'\x1B\x21\x01')   # modo condensado ON
-            printer._raw(b'\x0F')
+            # Configuración inicial del modo de impresión
+            printer._raw(b'\x1B\x21\x01')   # Negrita + doble altura (ajusta según ticket_builder)
+            printer._raw(b'\x0F')           # Modo condensado (más caracteres por línea)
 
-            # Ambos tickets reciben el config completo
             print_customer_ticket(printer, extracted, self.config)
             print_workshop_ticket(printer, extracted, self.config)
 
-            printer._raw(b'\x12')            # modo condensado OFF
-            printer._raw(b'\x1B\x21\x00')
+            # Restaurar modo normal y cortar (si la impresora lo soporta)
+            printer._raw(b'\x12')           # Cancelar condensado
+            printer._raw(b'\x1B\x21\x00')   # Resetear formato
 
-            printer.close()
-            print("✓ Impresion completada")
-            return {"success": True, "message": "Ticket impreso con exito"}
+            printer.cut()                   # Corte de papel (recomendado)
 
-        except (DeviceNotFoundError, Error) as e:
-            print(f"✗ Error de impresora: {e}")
-            return {"success": False, "message": str(e)}
+            print("✓ Impresión REAL completada")
+            return {"success": True, "message": "Ticket impreso con éxito"}
+
+        except (DeviceNotFoundError, EscposError) as e:
+            msg = f"No se pudo conectar con la impresora: {e}"
+            print(f"✗ {msg}")
+            return {"success": False, "message": msg}
 
         except Exception as e:
-            import traceback
             traceback.print_exc()
-            return {"success": False, "message": str(e)}
+            msg = f"Error inesperado durante la impresión: {str(e)}"
+            print(f"✗ {msg}")
+            return {"success": False, "message": msg}
 
         finally:
-            if printer:
+            if printer is not None:
                 try:
                     printer.close()
                 except Exception:

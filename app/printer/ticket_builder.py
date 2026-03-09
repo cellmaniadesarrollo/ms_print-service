@@ -136,8 +136,10 @@ def print_workshop_ticket(printer, data: dict, config: AppConfig) -> None:
         data:    dict normalizado por _extract() en printer_service.py
         config:  AppConfig con layout y features
     """
+    feat   = config.features
     layout = config.ticket.layout
     total_width = layout.total_width_override or config.paper_px
+
     # Encabezado empresa
     company_img = build_company_name_image(data['company_name'], total_width , font_size=72)
     printer.image(company_img, center=True)
@@ -155,13 +157,11 @@ def print_workshop_ticket(printer, data: dict, config: AppConfig) -> None:
         text_lines.append(f"IMEI: {data['imei']}")
     if data['password']:
         text_lines.append(f"Pass: {data['password']}")
+    # ── NUEVO: patrón escrito ──────────────────────────────────────
+    if data['patron']:
+        text_lines.append(f"Patron: {data['patron']}")
     if data['received_by']:
         text_lines.append(f"Recibe: {data['received_by']}\n")
-     
- 
-
-    # Ancho: usa override si está configurado, si no usa paper_px automático
-    
 
     pattern_img = build_pattern_image(data['patron'])
     combined    = build_side_by_side(
@@ -173,6 +173,21 @@ def print_workshop_ticket(printer, data: dict, config: AppConfig) -> None:
 
     printer.set(align="left")
     printer.image(combined, center=False)
-    printer.text("\n\n")
+    printer.text("\n")
+
+    # ── NUEVO: Motivo de ingreso ───────────────────────────────────
+    if data['motivo']:
+        printer.set(align="left", bold=False, font='b', width=1, height=1)
+        printer.text("Motivo de ingreso:\n")
+        for i in range(0, len(data['motivo']), 64):
+            printer.text(data['motivo'][i:i+64] + "\n")
+        printer.text("\n")
+
+    # ── NUEVO: QR de seguimiento (mismo feature flag que el cliente) ──
+    if feat.print_qr and data['qr_url']:
+        printer.set(align="center", font='b', width=1, height=1, bold=False)
+        printer.text("Escanee el codigo QR para ver el estado.\n")
+        printer.qr(data['qr_url'], size=3)
+        printer.text("\n")
 
     printer.cut()

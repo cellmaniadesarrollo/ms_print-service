@@ -59,7 +59,8 @@ def setup_tray() -> None:
     def on_open(icon, item) -> None:
         import webbrowser
         port = int(os.getenv("PORT", "56789"))
-        webbrowser.open(f"https://localhost:{port}/")
+        host = os.getenv("PUBLIC_HOST", f"localhost:{port}")
+        webbrowser.open(f"https://{host}/")
 
     def on_exit(icon, item) -> None:
         icon.stop()
