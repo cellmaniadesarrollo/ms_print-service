@@ -1,12 +1,42 @@
- 
+# Python
 __pycache__/
 *.pyc
 *.pyo
-build/
-dist/           
-*.spec
-*.log
-*.env 
+*.pyd
+*.py[cod]
 
- instalador/*
+# Entornos virtuales y poetry/pip
+.venv/
+venv/
+env/
+*.env
+poetry.lock               # opcional: quítalo si NO quieres versionar las dependencias exactas
+
+# Builds y empaquetado
+build/
+dist/
+*.egg-info/
+*.egg
+*.spec                    # PyInstaller / cx_Freeze
+*.exe                     # por si acaso se genera alguno en la raíz
+
+# Logs y temporales
+**/*.log
+*.log.*
+
+# Archivos del sistema / editores
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Certificados y datos sensibles
+certs/
+*.pem
+*.key
+*.crt
+*.p12
+
+# Carpeta instalador (Inno Setup)
+instalador/*
 !instalador/instalador.iss
