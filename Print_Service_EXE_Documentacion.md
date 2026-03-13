@@ -126,18 +126,20 @@ Desde la raíz del proyecto:
 
 ``` powershell
 poetry run pyinstaller `
->>     --onedir --noconsole --name "PrintService" `
->>     --add-data "certs;certs" --add-data "icon.png;." `
->>     --collect-data escpos `
->>     --hidden-import escpos.printer `
->>     --hidden-import escpos.capabilities `
->>     app/main.py
+    --clean `
+    --onedir --noconsole --name "PrintService" `
+    --add-data "certs;certs" --add-data "icon.png;." `
+    --collect-data escpos `
+    --hidden-import escpos.printer `
+    --hidden-import escpos.capabilities `
+    app/main.py
 ```
 ``` powershell
 poetry run pyinstaller `
->>     --onefile --noconsole --name "Launcher" `   
->>     --add-data "icon.png;." `
->>     launcher.py
+    --onefile --noconsole --name "Launcher" `
+    --add-data "icon.png;." `
+    --uac-admin `
+    launcher.py
 ```
 ### Explicación
 

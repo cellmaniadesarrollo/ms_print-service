@@ -36,7 +36,7 @@ import requests
 # Constantes — ACTUALIZA CURRENT_VERSION EN CADA RELEASE
 # ─────────────────────────────────────────────────────────────────────────────
 
-CURRENT_VERSION: str = "1.0.4"
+CURRENT_VERSION: str = "1.0.7"
 UPDATE_INTERVAL_MINUTES: int = 1       # ← 1 beta, 360 producción
 
 REPO_OWNER: str = "cellmaniadesarrollo"
@@ -54,7 +54,7 @@ ASSET_NAME: str = "PrintService.zip"
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _get_base_dir() -> str:
-    """
+    r"""
     dist\PrintService\ en modo .exe
     Raíz del proyecto en desarrollo
     """

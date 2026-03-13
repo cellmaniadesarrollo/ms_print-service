@@ -13,7 +13,7 @@ Uso típico (en endpoint):
     printer_service.print_receipt(payload_json) → {"success": bool, "message": str}
 """
 
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 import traceback
 
 from app.config import AppConfig
@@ -22,7 +22,7 @@ from app.printer.ticket_builder import print_customer_ticket, print_workshop_tic
 
 from escpos.exceptions import Error as EscposError, DeviceNotFoundError
 
-
+TZ_EC = timezone(timedelta(hours=-5))
 # Campos estrictamente necesarios en el payload
 REQUIRED_FIELDS = [
     "order_number",
@@ -66,7 +66,8 @@ def _extract(data: dict, qr_base_url: str) -> tuple[dict | None, str | None]:
     entry_date_raw = data.get("entry_date", "")
     try:
         # Soporta ISO con Z (UTC) → lo convertimos a objeto datetime
-        entry_dt = datetime.fromisoformat(entry_date_raw.replace("Z", "+00:00"))
+        entry_dt_utc = datetime.fromisoformat(entry_date_raw.replace("Z", "+00:00"))
+        entry_dt = entry_dt_utc.astimezone(TZ_EC)
     except (ValueError, TypeError) as e:
         return None, f"Formato inválido en entry_date: '{entry_date_raw}' → {e}"
 
@@ -108,9 +109,12 @@ def _extract(data: dict, qr_base_url: str) -> tuple[dict | None, str | None]:
             f"{safe_str(customer.get('lastName'))}"
         ).strip().upper(),
         "customer_ci":    safe_str(customer.get("idNumber")),
-        "primary_phone":  next(
-            (safe_str(c.get("value")) for c in contacts if c.get("isPrimary")), ""
-        ),
+        # Todos los números MÓVIL del cliente (para el ticket de taller)
+        "mobile_phones":  [
+            safe_str(c.get("value"))
+            for c in contacts
+            if c.get("typeName") == "MÓVIL" and c.get("value")
+        ],
 
         # Equipo
         "device_model":   device_model,
@@ -171,7 +175,7 @@ class PrinterService:
             printer._raw(b'\x12')           # Cancelar condensado
             printer._raw(b'\x1B\x21\x00')   # Resetear formato
 
-            printer.cut()                   # Corte de papel (recomendado)
+            #printer.cut()                   # Corte de papel (recomendado)
 
             print("✓ Impresión REAL completada")
             return {"success": True, "message": "Ticket impreso con éxito"}
