@@ -126,9 +126,9 @@ Desde la raíz del proyecto:
 
 ``` powershell
 poetry run pyinstaller `
-    --clean `
     --onedir --noconsole --name "PrintService" `
-    --add-data "certs;certs" --add-data "icon.png;." `
+    --add-data "certs;certs" `
+    --add-data "icon.png;." `
     --collect-data escpos `
     --hidden-import escpos.printer `
     --hidden-import escpos.capabilities `
