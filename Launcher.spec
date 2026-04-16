@@ -2,7 +2,7 @@
 
 
 a = Analysis(
-    ['launcher.py'],
+    ['Launcher.py'],
     pathex=[],
     binaries=[],
     datas=[('icon.png', '.')],

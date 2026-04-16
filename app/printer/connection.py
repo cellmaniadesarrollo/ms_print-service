@@ -1,3 +1,4 @@
+#app\printer\connection.py
 import usb.core
 import usb.util
 import usb.backend.libusb1

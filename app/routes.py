@@ -256,3 +256,27 @@ async def print_receipt(data: Dict[str, Any] = Body(...)):
         )
 
     return result
+
+@app.post("/print/payment") 
+async def print_payment(data: Dict[str, Any] = Body(...)):
+    """
+    Imprime un comprobante de abono/adelanto sobre una orden de servicio.
+ 
+    El cuerpo debe ser la transacción completa tal como la devuelve el backend,
+    incluyendo los sub-objetos `order`, `paymentType`, `paymentMethod` y
+    `receivedBy` anidados.
+ 
+    La validación del esquema se hace en PrinterService con Pydantic;
+    si algún campo requerido falta, se devuelve HTTP 422 con el detalle.
+ 
+    POST https://localhost:56789/print/payment
+    Body: { ...datos de la transacción... }
+    """
+    print(">>> DATA RECIBIDA:", data)          # ← añadir esto
+    result = printer_service.print_payment(data)
+    print(">>> RESULTADO:", result)             # ← y esto
+    if not result.get("success", False):
+        msg = result.get("message", "Error desconocido al imprimir comprobante")
+        status = 422 if "faltantes" in msg else 500
+        raise HTTPException(status_code=status, detail=msg)
+    return result

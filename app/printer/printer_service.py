@@ -20,6 +20,9 @@ from app.config import AppConfig
 from app.printer.connection import open_printer
 from app.printer.ticket_builder import print_customer_ticket, print_workshop_ticket
 
+from app.printer.payment_ticket import print_payment_ticket
+from app.printer.schemas import PaymentTicketRequest 
+
 from escpos.exceptions import Error as EscposError, DeviceNotFoundError
 
 TZ_EC = timezone(timedelta(hours=-5))
@@ -75,6 +78,7 @@ def _extract(data: dict, qr_base_url: str) -> tuple[dict | None, str | None]:
     company    = data.get("company")    or {}
     customer   = data.get("customer")   or {}
     device     = data.get("device")     or {}
+    branch     = data.get("branch")     or {}
     created_by = data.get("createdBy")  or {}
     contacts   = customer.get("contacts") or []
 
@@ -102,6 +106,7 @@ def _extract(data: dict, qr_base_url: str) -> tuple[dict | None, str | None]:
 
         # Empresa
         "company_name":   company.get("name", "").strip().upper(),
+        "branch_name":    branch.get("name", "").strip().upper(),
 
         # Cliente
         "customer_name":  (
@@ -197,3 +202,54 @@ class PrinterService:
                     printer.close()
                 except Exception:
                     pass
+
+
+    def print_payment(self, data: dict) -> dict:
+        """
+        Imprime un comprobante de abono/adelanto.
+ 
+        Valida el dict de entrada con Pydantic antes de tocar la impresora.
+ 
+        Returns:
+            {"success": True,  "message": "Comprobante impreso con éxito"}
+            {"success": False, "message": "explicación del error"}
+        """
+        # ── 1. Validación con Pydantic ───────────────────────────────────────
+        try:
+            req = PaymentTicketRequest(**data)
+        except Exception as e:
+            return {"success": False, "message": f"Datos de pago inválidos: {e}"}
+ 
+        # ── 2. Impresión ─────────────────────────────────────────────────────
+        printer = None
+        try:
+            printer = open_printer(self.config)
+ 
+            printer._raw(b'\x1B\x21\x01')  # Negrita + doble altura
+            printer._raw(b'\x0F')          # Modo condensado
+ 
+            print_payment_ticket(printer, req, self.config)
+ 
+            printer._raw(b'\x12')          # Cancelar condensado
+            printer._raw(b'\x1B\x21\x00')  # Resetear formato
+ 
+            print("✓ Comprobante de abono impreso")
+            return {"success": True, "message": "Comprobante impreso con éxito"}
+ 
+        except (DeviceNotFoundError, EscposError) as e:
+            msg = f"No se pudo conectar con la impresora: {e}"
+            print(f"✗ {msg}")
+            return {"success": False, "message": msg}
+ 
+        except Exception as e:
+            traceback.print_exc()
+            msg = f"Error inesperado al imprimir comprobante: {str(e)}"
+            print(f"✗ {msg}")
+            return {"success": False, "message": msg}
+ 
+        finally:
+            if printer is not None:
+                try:
+                    printer.close()
+                except Exception:
+                    pass   

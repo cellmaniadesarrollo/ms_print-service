@@ -108,33 +108,46 @@ def print_workshop_ticket(printer, data: dict, config: AppConfig) -> None:
     layout = config.ticket.layout
     total_width = layout.total_width_override or config.paper_px
 
+    # ==================== CABECERA CON SUCURSAL ====================
     printer.set(align="center", bold=False, font='b', width=1, height=1)
     printer.text(f"{data['entry_date_str']} | No: {data['order_number']}\n")
+    
+    # ←←← NUEVO: Nombre de la sucursal ←←←
+    branch_name = data.get('branch_name', '').strip()
+    if branch_name:
+        printer.text(f"Sucursal: {branch_name}\n")
+    
+    printer.text("\n")   # separador
 
+    # ==================== DATOS DEL TICKET ====================
     text_lines = []
     if data['customer_name']:
         text_lines.append(f"Cliente: {data['customer_name']}")
-    # ── Todos los números MÓVIL del cliente ──
+    
+    # Todos los números MÓVIL del cliente
     for phone in data['mobile_phones']:
         text_lines.append(f"Movil: {phone}")
+    
     if data['device_model']:
         text_lines.append(f"Equipo: {data['device_model'][:28]}")
-    if data['imei']:
+    
+    if data.get('imei'):
         text_lines.append(f"IMEI: {data['imei']}")
+    
     if data['password']:
         text_lines.append(f"Pass: {data['password']}")
+    
     if data['patron']:
         text_lines.append(f"Patron: {data['patron']}")
+    
     if data['received_by']:
         text_lines.append(f"Recibe: {data['received_by']}")
 
     has_patron = bool(data['patron'])
 
     if has_patron:
-        # Columna derecha = dibujo del patrón
         right_img = build_pattern_image(data['patron'])
     elif feat.print_qr and data['qr_url']:
-        # Columna derecha = imagen QR (misma posición que el patrón)
         right_img = _build_qr_image(data['qr_url'])
     else:
         right_img = None
@@ -156,9 +169,6 @@ def print_workshop_ticket(printer, data: dict, config: AppConfig) -> None:
             printer.text(data['motivo'][i:i+64] + "\n")
         printer.text("\n")
 
-    # QR cuando SÍ había patrón — ya se mostró el QR en la columna derecha
-    # cuando no había patrón, así que aquí solo aplica al caso con patrón.
-    # Sin texto explicativo — los técnicos lo saben.
     if has_patron and feat.print_qr and data['qr_url']:
         printer.set(align="center", font='b', width=1, height=1, bold=False)
         printer.qr(data['qr_url'], size=3)

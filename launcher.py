@@ -4,11 +4,18 @@ LAUNCHER — Print Service
 ═══════════════════════════════════════════════════════════════════════════════
 Lanza PrintService.exe y espera a que termine.
 Muestra una splash screen durante el arranque y las actualizaciones.
+
+FIX: SplashScreen ahora usa queue.Queue para comunicación entre hilos.
+     El hilo principal NUNCA llama after() directamente — solo encola
+     comandos que el hilo de Tkinter ejecuta cada 50 ms.
+     Esto resuelve: RuntimeError: main thread is not in main loop
+     que ocurría al iniciar desde el Task Scheduler de Windows.
 ═══════════════════════════════════════════════════════════════════════════════
 """
 
 import os
 import sys
+import queue
 import subprocess
 import time
 import ctypes
@@ -36,31 +43,89 @@ def show_error(msg: str) -> None:
 
 class SplashScreen:
     """
-    Ventana de progreso blanca que se muestra mientras ocurre
-    el arranque o la actualización.
+    Ventana de progreso que se muestra durante el arranque o actualización.
 
-    Se corre en un hilo separado para no bloquear el proceso principal.
+    Corre en un hilo separado. La comunicación con ese hilo es 100%
+    thread-safe mediante queue.Queue: el hilo principal nunca toca
+    widgets de Tkinter directamente.
 
     Uso:
         splash = SplashScreen()
         splash.start()
         splash.set_message("Descargando actualización...")
         splash.set_progress(60)   # 0-100
-        splash.close()
+        splash.close()            # espera a que la ventana se destruya
     """
 
+    # Comandos internos de la cola
+    _CMD_MESSAGE  = "message"
+    _CMD_PROGRESS = "progress"
+    _CMD_CLOSE    = "close"
+
     def __init__(self):
-        self._root    = None
-        self._label   = None
-        self._bar     = None
-        self._canvas  = None
-        self._ready   = threading.Event()  # señal de que la ventana ya está lista
-        self._thread  = threading.Thread(target=self._run, daemon=True)
+        self._root       = None
+        self._label      = None
+        self._canvas     = None
+        self._bar_fill   = None
+        self._bar_width  = 0
+        self._ready      = threading.Event()   # ventana lista
+        self._closed     = threading.Event()   # ventana destruida
+        self._queue      = queue.Queue()        # canal hilo-principal → Tk
+        self._thread     = threading.Thread(target=self._run, daemon=True)
+
+    # ── API pública (llamar desde cualquier hilo) ─────────────────────────────
 
     def start(self):
         """Lanza el hilo de la ventana y espera a que esté lista."""
         self._thread.start()
-        self._ready.wait(timeout=3)  # espera máx 3 s a que tkinter arranque
+        self._ready.wait(timeout=3)
+
+    def set_message(self, msg: str):
+        """Actualiza el texto de estado — thread-safe."""
+        self._queue.put((self._CMD_MESSAGE, msg))
+
+    def set_progress(self, pct: int):
+        """Actualiza la barra de progreso 0-100 — thread-safe."""
+        self._queue.put((self._CMD_PROGRESS, pct))
+
+    def close(self):
+        """Cierra la ventana y espera a que se destruya — thread-safe."""
+        self._queue.put((self._CMD_CLOSE, None))
+        self._closed.wait(timeout=3)   # espera confirmación del hilo Tk
+
+    # ── Internos (solo se ejecutan en el hilo de Tkinter) ────────────────────
+
+    def _process_queue(self):
+        """
+        Vacía la cola y aplica cada comando.
+        Se reprograma sola cada 50 ms DENTRO del hilo de Tkinter,
+        por lo que nunca hay acceso cruzado a widgets.
+        """
+        try:
+            while True:
+                cmd, arg = self._queue.get_nowait()
+
+                if cmd == self._CMD_MESSAGE:
+                    if self._label:
+                        self._label.config(text=arg)
+
+                elif cmd == self._CMD_PROGRESS:
+                    if self._canvas and self._bar_fill:
+                        w = int(self._bar_width * max(0, min(arg, 100)) / 100)
+                        self._canvas.coords(self._bar_fill, 0, 0, w, 6)
+
+                elif cmd == self._CMD_CLOSE:
+                    if self._root:
+                        self._root.destroy()
+                    self._closed.set()   # confirma al hilo principal
+                    return               # no reprogramar más
+
+        except queue.Empty:
+            pass
+
+        # Reprogramar solo si no se recibió CLOSE
+        if self._root:
+            self._root.after(50, self._process_queue)
 
     def _run(self):
         """Corre en el hilo secundario — crea y mantiene la ventana."""
@@ -69,34 +134,28 @@ class SplashScreen:
 
         # ── Configuración de la ventana ───────────────────────────────────────
         root.title("Print Service")
-        root.overrideredirect(True)          # sin bordes ni barra de título
+        root.overrideredirect(True)
         root.configure(bg="white")
-        root.attributes("-topmost", True)    # siempre encima
+        root.attributes("-topmost", True)
 
-        # Centrar en pantalla
         w, h = 420, 220
         sw = root.winfo_screenwidth()
         sh = root.winfo_screenheight()
         root.geometry(f"{w}x{h}+{(sw - w) // 2}+{(sh - h) // 2}")
-
-        # Borde sutil
         root.configure(highlightbackground="#e0e0e0", highlightthickness=1)
 
         # ── Contenido ─────────────────────────────────────────────────────────
-        # Ícono / emoji
         tk.Label(
             root, text="🖨", font=("Segoe UI Emoji", 36),
             bg="white", fg="#00b37d"
         ).pack(pady=(30, 0))
 
-        # Título
         tk.Label(
             root, text="Print Service",
             font=("Segoe UI", 14, "bold"),
             bg="white", fg="#1a1a2e"
         ).pack(pady=(8, 0))
 
-        # Mensaje de estado (dinámico)
         self._label = tk.Label(
             root, text="Iniciando...",
             font=("Segoe UI", 9),
@@ -104,52 +163,27 @@ class SplashScreen:
         )
         self._label.pack(pady=(6, 0))
 
-        # Barra de progreso manual (canvas)
         frame = tk.Frame(root, bg="white")
         frame.pack(pady=(16, 0), padx=40, fill="x")
 
         bg_bar = tk.Canvas(frame, height=6, bg="#f0f0f0", highlightthickness=0)
         bg_bar.pack(fill="x")
 
-        self._canvas   = bg_bar
-        self._bar_fill = None
-        self._bar_width = 0
-
-        # Dibujar barra inicial vacía
+        self._canvas = bg_bar
         bg_bar.update_idletasks()
         self._bar_width = bg_bar.winfo_width() or 340
-        self._bar_fill  = bg_bar.create_rectangle(
-            0, 0, 0, 6, fill="#00b37d", outline=""
-        )
+        self._bar_fill  = bg_bar.create_rectangle(0, 0, 0, 6, fill="#00b37d", outline="")
 
-        # Versión
         tk.Label(
             root, text="Cargando...",
             font=("Segoe UI", 8),
             bg="white", fg="#aaaaaa"
         ).pack(side="bottom", pady=10)
 
-        # Señal de que la ventana está lista
+        # Arrancar el procesador de cola y señalizar que la ventana está lista
+        root.after(50, self._process_queue)
         self._ready.set()
         root.mainloop()
-
-    def set_message(self, msg: str):
-        """Actualiza el texto de estado (thread-safe)."""
-        if self._root and self._label:
-            self._root.after(0, lambda: self._label.config(text=msg))
-
-    def set_progress(self, pct: int):
-        """Actualiza la barra de progreso 0-100 (thread-safe)."""
-        if self._root and self._canvas and self._bar_fill:
-            def _update():
-                w = int(self._bar_width * max(0, min(pct, 100)) / 100)
-                self._canvas.coords(self._bar_fill, 0, 0, w, 6)
-            self._root.after(0, _update)
-
-    def close(self):
-        """Cierra la ventana (thread-safe)."""
-        if self._root:
-            self._root.after(0, self._root.destroy)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -172,10 +206,9 @@ def main() -> None:
 
         proc = subprocess.Popen(
             ["cmd", "/c", updater_bat],
-            creationflags=subprocess.CREATE_NO_WINDOW,  # sin ventana de consola
+            creationflags=subprocess.CREATE_NO_WINDOW,
         )
 
-        # Animar la barra mientras el .bat corre
         pct = 10
         while proc.poll() is None:
             time.sleep(0.5)
@@ -189,7 +222,6 @@ def main() -> None:
         splash.close()
         time.sleep(0.3)
 
-        # El .bat terminó → PrintService\ ya está actualizada → relanzar
         main()
         return
 

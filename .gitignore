@@ -38,5 +38,4 @@ certs/
 *.p12
 
 # Carpeta instalador (Inno Setup)
-instalador/*
-!instalador/instalador.iss
+instalador/* 

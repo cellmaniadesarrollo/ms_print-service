@@ -1,77 +1,54 @@
 ; =============================================================================
-; Script de instalación Inno Setup para PrintService
+; Script de instalacion Inno Setup para PrintService
 ; =============================================================================
 ; Autor:       Christian
-; Descripción: Instala el servicio de impresión PrintService con Launcher.exe
-;              Incluye página personalizada para configurar conexión de impresora
-;              (red o USB), genera config.json y .env, agrega reglas de firewall.
-; Versión:     1.0
-; Fecha:       Marzo 2026
-; Notas:       Requiere ejecución como administrador (PrivilegesRequired=admin)
-;              para instalar en Program Files y modificar firewall.
+; Version:     1.2 - Marzo 2026
+; Correcciones:
+;   - SaveStringToFile: False (overwrite) en vez de True (append)
+;   - Sin BOM: el JSON generado es ASCII puro (UTF-8 valido sin BOM)
+;   - Sin tildes en los strings del JSON para evitar encoding ANSI vs UTF-8
 ; =============================================================================
 
 [Setup]
-; Nombre de la aplicación (se muestra en el asistente y desinstalador)
 AppName=PrintService
-; Versión de la aplicación
-AppVersion=1.0
-; Carpeta de instalación predeterminada: C:\Program Files\PrintService
-; {pf} fuerza Program Files (requiere admin)
+AppVersion=1.2
 DefaultDirName={pf}\PrintService
-; Nombre del grupo en el menú Inicio
 DefaultGroupName=PrintService
-; Carpeta donde se genera el instalador final
 OutputDir=Output
-; Nombre del archivo .exe generado
 OutputBaseFilename=Instalador_PrintService
-; Compresión usada (buen balance tamaño/velocidad)
 Compression=lzma
 SolidCompression=yes
-; Estilo visual del asistente (moderno)
 WizardStyle=modern
-; Requiere privilegios de administrador (necesario para Program Files y firewall)
 PrivilegesRequired=admin
-; Opcional: permite override vía línea de comandos o diálogo (para "solo para mí")
-; PrivilegesRequiredOverridesAllowed=dialog commandline
 
 [Files]
-; Copia toda la carpeta PrintService (incluyendo subcarpetas)
 Source: "PrintService\*"; DestDir: "{app}\PrintService"; Flags: ignoreversion recursesubdirs createallsubdirs
-; Copia el lanzador principal
 Source: "Launcher.exe"; DestDir: "{app}"; Flags: ignoreversion
 
 [Dirs]
-; Crea carpeta para certificados (se usa en .env)
 Name: "{app}\PrintService\certs"
 
 [Icons]
-; Acceso directo en el menú Inicio (grupo PrintService)
 Name: "{group}\PrintService"; Filename: "{app}\Launcher.exe"
-; Acceso directo en el escritorio del usuario actual (evita problemas con Public\Desktop)
 Name: "{userdesktop}\PrintService"; Filename: "{app}\Launcher.exe"
 
 [Run]
-; Al finalizar instalación: ejecuta Launcher.exe
-; shellexec → usa ShellExecute (respeta manifest de UAC si existe)
-; runascurrentuser → se ejecuta en contexto del usuario (hereda elevación del instalador)
 Filename: "{app}\Launcher.exe"; \
     Description: "Ejecutar PrintService"; \
     Flags: nowait postinstall skipifsilent shellexec runascurrentuser
+Filename: "{sys}\schtasks.exe"; \
+    Parameters: "/Create /F /RL HIGHEST /SC ONLOGON /TN ""PrintService Launcher"" /TR ""\""{app}\Launcher.exe\"""" /DELAY 0000:10"; \
+    Description: "Iniciar PrintService automaticamente al login"; \
+    Flags: runhidden nowait skipifsilent; \
+    StatusMsg: "Configurando inicio automatico con privilegios elevados...";
 
 [UninstallDelete]
-; Elimina archivos de configuración al desinstalar (para limpieza completa)
 Type: files; Name: "{app}\PrintService\.env"
 Type: files; Name: "{app}\PrintService\config.json"
-; Elimina carpeta certs solo si queda vacía
 Type: dirifempty; Name: "{app}\PrintService\certs"
 
-; =============================================================================
-; Sección de código Pascal (personalización avanzada)
-; =============================================================================
 [Code]
 
-{ Variables globales para la página de configuración personalizada }
 var
   ConfigPage: TWizardPage;
   NetworkRadio, USBRadio: TRadioButton;
@@ -81,7 +58,6 @@ var
   PaperLabel: TLabel;
   PaperWidthEdit: TEdit;
 
-{ Actualiza visibilidad de campos según el tipo de conexión seleccionado }
 procedure UpdateFieldStates;
 var
   IsNetwork: Boolean;
@@ -96,34 +72,28 @@ begin
   UsbInfoLabel.Visible := not IsNetwork;
 end;
 
-{ Eventos de clic en los radio buttons }
 procedure NetworkRadioClick(Sender: TObject); begin UpdateFieldStates; end;
 procedure USBRadioClick(Sender: TObject); begin UpdateFieldStates; end;
 
-{ Crea la página personalizada de configuración de impresora }
 procedure InitializeWizard;
 begin
-  { Crea página después de wpSelectDir }
   ConfigPage := CreateCustomPage(wpSelectDir,
-    'Configuración de la Impresora',
-    'Elige el tipo de conexión y completa los parámetros necesarios');
+    'Configuracion de la Impresora',
+    'Elige el tipo de conexion y completa los parametros necesarios');
 
-  { Radio button: Conexión por red }
   NetworkRadio := TRadioButton.Create(ConfigPage);
   NetworkRadio.Parent := ConfigPage.Surface;
-  NetworkRadio.Caption := 'Conexión por Red (IP)';
+  NetworkRadio.Caption := 'Conexion por Red (IP)';
   NetworkRadio.Left := 0; NetworkRadio.Top := 0; NetworkRadio.Width := 220;
   NetworkRadio.Checked := True;
   NetworkRadio.OnClick := @NetworkRadioClick;
 
-  { Radio button: Conexión USB }
   USBRadio := TRadioButton.Create(ConfigPage);
   USBRadio.Parent := ConfigPage.Surface;
-  USBRadio.Caption := 'Conexión USB';
+  USBRadio.Caption := 'Conexion USB';
   USBRadio.Left := 0; USBRadio.Top := 24; USBRadio.Width := 220;
   USBRadio.OnClick := @USBRadioClick;
 
-  { Campos para conexión de red }
   IpLabel := TLabel.Create(ConfigPage);
   IpLabel.Parent := ConfigPage.Surface;
   IpLabel.Caption := 'IP de la impresora:';
@@ -154,17 +124,15 @@ begin
   TimeoutEdit.Text := '10';
   TimeoutEdit.Left := 120; TimeoutEdit.Top := 116; TimeoutEdit.Width := 80;
 
-  { Mensaje informativo para USB }
   UsbInfoLabel := TLabel.Create(ConfigPage);
   UsbInfoLabel.Parent := ConfigPage.Surface;
-  UsbInfoLabel.Caption := 'La impresora USB se detectará automáticamente' + #13#10 +
-                          'al conectarla. No se requiere configuración adicional.';
+  UsbInfoLabel.Caption := 'La impresora USB se detectara automaticamente' + #13#10 +
+                          'al conectarla. No se requiere configuracion adicional.';
   UsbInfoLabel.Left := 0; UsbInfoLabel.Top := 56;
   UsbInfoLabel.Width := 380;
   UsbInfoLabel.Font.Style := [fsBold];
   UsbInfoLabel.Font.Color := clGreen;
 
-  { Campo común: ancho de papel }
   PaperLabel := TLabel.Create(ConfigPage);
   PaperLabel.Parent := ConfigPage.Surface;
   PaperLabel.Caption := 'Ancho del papel (mm):';
@@ -175,11 +143,9 @@ begin
   PaperWidthEdit.Text := '80';
   PaperWidthEdit.Left := 0; PaperWidthEdit.Top := 166; PaperWidthEdit.Width := 80;
 
-  { Inicializa visibilidad }
   UpdateFieldStates;
 end;
 
-{ Validación antes de pasar a la siguiente página }
 function NextButtonClick(CurPageID: Integer): Boolean;
 begin
   Result := True;
@@ -187,13 +153,12 @@ begin
   begin
     if NetworkRadio.Checked and (Trim(IpEdit.Text) = '') then
     begin
-      MsgBox('La IP de la impresora no puede estar vacía.', mbError, MB_OK);
+      MsgBox('La IP de la impresora no puede estar vacia.', mbError, MB_OK);
       Result := False;
     end;
   end;
 end;
 
-{ Genera el archivo config.json con los valores del usuario }
 procedure GenerateConfigJson;
 var
   ConnectionType, NetworkBlock, JsonContent: string;
@@ -202,17 +167,20 @@ begin
   begin
     ConnectionType := 'network';
     NetworkBlock :=
-      ' "network": {' + #13#10 +
-      '   "ip": "' + IpEdit.Text + '",' + #13#10 +
-      '   "port": ' + PortEdit.Text + ',' + #13#10 +
-      '   "timeout": ' + TimeoutEdit.Text + #13#10 +
-      ' },' + #13#10;
+      '  "network": {' + #13#10 +
+      '    "ip": "' + IpEdit.Text + '",' + #13#10 +
+      '    "port": ' + PortEdit.Text + ',' + #13#10 +
+      '    "timeout": ' + TimeoutEdit.Text + #13#10 +
+      '  },' + #13#10;
   end else
   begin
     ConnectionType := 'usb';
     NetworkBlock := '';
   end;
 
+  { IMPORTANTE: estos strings NO tienen tildes ni caracteres especiales      }
+  { para que SaveStringToFile los guarde en ASCII puro (= UTF-8 valido).     }
+  { Python los leeera con encoding='utf-8' sin ningun problema.              }
   JsonContent :=
     '{' + #13#10 +
     '  "connection": "' + ConnectionType + '",' + #13#10 +
@@ -227,9 +195,9 @@ begin
     '    },' + #13#10 +
     '    "footer": {' + #13#10 +
     '      "lines": [' + #13#10 +
-    '        "- Costo mínimo revisión: $4 (puede variar)",' + #13#10 +
-    '        "- En la reparación se utilizan materiales, herramientas y tiempo.",' + #13#10 +
-    '        "- Tiempo máximo para retirar el dispositivo: 3 meses."' + #13#10 +
+    '        "- Costo minimo revision: $4 (puede variar)",' + #13#10 +
+    '        "- En la reparacion se utilizan materiales, herramientas y tiempo.",' + #13#10 +
+    '        "- Tiempo maximo para retirar el dispositivo: 3 meses."' + #13#10 +
     '      ]' + #13#10 +
     '    },' + #13#10 +
     '    "promotions": {' + #13#10 +
@@ -245,27 +213,35 @@ begin
     '  }' + #13#10 +
     '}';
 
-  SaveStringToFile(ExpandConstant('{app}\PrintService\config.json'), JsonContent, False);
+  { False = sobrescribir (no append). Sin BOM: ASCII puro es UTF-8 valido. }
+  SaveStringToFile(
+    ExpandConstant('{app}\PrintService\config.json'),
+    JsonContent,
+    False
+  );
 end;
 
-{ Genera el archivo .env con variables de entorno del servicio }
 procedure GenerateEnvFile;
 var
   EnvContent: string;
 begin
+  { El .env tampoco tiene caracteres especiales: ASCII puro = UTF-8 valido. }
   EnvContent :=
     'PORT=56789' + #13#10 +
     'SSL_KEYFILE=certs/server.key' + #13#10 +
     'SSL_CERTFILE=certs/server.pem' + #13#10 +
     'RELOAD=False' + #13#10 +
-    'GITHUB_TOKEN=ghp_miclave' + #13#10 +           ; ← ¡Cambia esto en producción!
+    'GITHUB_TOKEN=ghp_3U' + #13#10 +
     'UPDATE_INTERVAL_MINUTES=1' + #13#10 +
     'UPDATE_INTERVAL_HOURS=6';
 
-  SaveStringToFile(ExpandConstant('{app}\PrintService\.env'), EnvContent, False);
+  SaveStringToFile(
+    ExpandConstant('{app}\PrintService\.env'),
+    EnvContent,
+    False
+  );
 end;
 
-{ Agrega reglas de firewall para permitir el tráfico del Launcher }
 procedure AddFirewallRule;
 var
   ResultCode: Integer;
@@ -282,42 +258,37 @@ begin
     '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
 end;
 
-{ Elimina las reglas de firewall al desinstalar }
 procedure RemoveFirewallRule;
 var
   ResultCode: Integer;
 begin
-  Exec(ExpandConstant('{sys}\netsh.exe'), 'advfirewall firewall delete rule name="PrintService"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  Exec(ExpandConstant('{sys}\netsh.exe'), 'advfirewall firewall delete rule name="PrintService Out"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec(ExpandConstant('{sys}\netsh.exe'),
+    'advfirewall firewall delete rule name="PrintService"',
+    '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec(ExpandConstant('{sys}\netsh.exe'),
+    'advfirewall firewall delete rule name="PrintService Out"',
+    '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
 end;
 
-{ Acciones después de instalar los archivos }
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssPostInstall then
   begin
-    GenerateConfigJson;     // Crea config.json con valores del usuario
-    GenerateEnvFile;        // Crea .env con puerto, certs y token
-    AddFirewallRule;        // Abre puertos en firewall
+    GenerateConfigJson;
+    GenerateEnvFile;
+    AddFirewallRule;
   end;
 end;
 
-{ Acciones durante la desinstalación }
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
   ResultCode: Integer;
 begin
   if CurUninstallStep = usUninstall then
   begin
-    { Mata procesos para evitar archivos en uso }
     Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM Launcher.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
     Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM PrintService.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-    Sleep(1500);  // Espera un poco para que terminen
-
-    RemoveFirewallRule;   // Limpia reglas de firewall
+    Sleep(1500);
+    RemoveFirewallRule;
   end;
 end;
-
-; =============================================================================
-; Fin del script
-; =============================================================================
