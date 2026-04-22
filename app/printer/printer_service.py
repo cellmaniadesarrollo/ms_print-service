@@ -30,8 +30,7 @@ TZ_EC = timezone(timedelta(hours=-5))
 REQUIRED_FIELDS = [
     "order_number",
     "entry_date",
-    "customer",
-    "device",
+    "customer",     
     "public_id",
 ]
 
@@ -94,7 +93,7 @@ def _extract(data: dict, qr_base_url: str) -> tuple[dict | None, str | None]:
     qr_url = safe_str(data.get("qr_url"))
     if not qr_url and qr_base_url and public_id:
         qr_url = f"{qr_base_url.rstrip('/')}/{public_id}"
-
+    order_type = (data.get("type") or {}).get("name", "").upper()
     # Construimos el diccionario final normalizado
     return {
         # Orden / identificación
@@ -133,6 +132,8 @@ def _extract(data: dict, qr_base_url: str) -> tuple[dict | None, str | None]:
         # Quién recibió
         "received_by":    safe_str(created_by.get("first_name")),
         "received_phone": safe_str(created_by.get("phone")),
+
+        "order_type": order_type
     }, None
 
 

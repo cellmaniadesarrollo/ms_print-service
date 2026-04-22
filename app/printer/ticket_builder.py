@@ -44,6 +44,7 @@ def _build_qr_image(url: str) -> Image.Image:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def print_customer_ticket(printer, data: dict, config: AppConfig) -> None:
+    print(f"DEBUG: Tipo de orden detectado: '{data.get('order_type')}'")
     feat   = config.features
     ticket = config.ticket
     layout = config.ticket.layout
@@ -52,10 +53,12 @@ def print_customer_ticket(printer, data: dict, config: AppConfig) -> None:
     company_img = build_company_name_image(data['company_name'], total_width, font_size=72)
     printer.image(company_img, center=True)
     printer.text("\n")
-
-    if feat.print_wednesday_promo and data['entry_dt'].weekday() == 2 and ticket.wednesday_promo:
+    es_miercoles = data['entry_dt'].weekday() == 2
+    # 2. ¿Es Servicio Técnico? (Cuidado con las tildes, mejor usar .upper())
+    es_servicio_tecnico = data.get('order_type') == "SERVICIO TÉCNICO"
+    if feat.print_wednesday_promo and es_miercoles and es_servicio_tecnico and ticket.wednesday_promo: 
         printer.set(align="center", bold=False, font='b', width=1, height=1)
-        printer.text(f"{ticket.wednesday_promo}\n")
+        printer.text(f"{ticket.wednesday_promo}\n") 
 
     printer.set(align="center", bold=True, font='b', width=1, height=1)
     printer.text(f"{data['entry_date_str']} | No. {data['order_number']}\n\n")
@@ -91,10 +94,11 @@ def print_customer_ticket(printer, data: dict, config: AppConfig) -> None:
         printer.text("Escanee el codigo QR para ver el estado.\n")
         printer.qr(data['qr_url'], size=3)
 
-    printer.set(align="left")
-    footer_img = build_footer_image(ticket.footer_lines, config.paper_px, width_scale=1.2)
-    printer.image(footer_img, center=False)
-    printer.text("\n")
+    if es_servicio_tecnico: 
+        printer.set(align="left")
+        footer_img = build_footer_image(config.paper_px, width_scale=1.2)
+        printer.image(footer_img, center=False)
+        printer.text("\n") 
 
     printer.cut()
 

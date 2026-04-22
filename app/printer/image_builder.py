@@ -187,7 +187,16 @@ def build_pattern_image(patron_str: str) -> Image.Image | None:
 # Imagen del footer (términos y condiciones)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def build_footer_image(footer_lines: list[str], total_width: int, font_size: int = 22, width_scale: float = 1.0) -> Image.Image:
+def build_footer_image( total_width: int, font_size: int = 22, width_scale: float = 1.0) -> Image.Image:
+    footer_lines = [
+        "- El costo mínimo de revisión es de $4. Este valor podría incrementarse",
+        "  dependiendo del modelo de su dispositivo.",
+        "- Recuerde: en la revisión de su dispositivo utilizamos materiales,",
+        "  herramientas y tiempo de trabajo.",
+        "- El tiempo máximo para retirar su dispositivo es de 3 meses."
+    ]
+    if not footer_lines:
+        return Image.new('1', (total_width, 1), 'white')
     scaled_width = int(total_width * width_scale)  # ← ancho escalado
     tmp = ImageDraw.Draw(Image.new('RGB', (1, 1)))
 
