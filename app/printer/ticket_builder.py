@@ -141,6 +141,7 @@ def print_customer_ticket(printer, data: dict, config: AppConfig) -> None:
     footer_img = build_footer_image(config.paper_px, width_scale=1.2,es_servicio_tecnico=es_servicio_tecnico)
     printer.image(footer_img, center=False)
     printer.text("\n") 
+    printer.text("\n") 
 
     printer.cut()
 
