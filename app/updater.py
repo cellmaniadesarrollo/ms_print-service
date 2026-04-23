@@ -36,7 +36,7 @@ import requests
 # Constantes — ACTUALIZA CURRENT_VERSION EN CADA RELEASE
 # ─────────────────────────────────────────────────────────────────────────────
 
-CURRENT_VERSION: str = "1.1.4"
+CURRENT_VERSION: str = "1.1.5"
 UPDATE_INTERVAL_MINUTES: int = 1       # ← 1 beta, 360 producción
 
 REPO_OWNER: str = "cellmaniadesarrollo"
