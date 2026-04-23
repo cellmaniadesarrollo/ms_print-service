@@ -187,19 +187,33 @@ def build_pattern_image(patron_str: str) -> Image.Image | None:
 # Imagen del footer (términos y condiciones)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def build_footer_image( total_width: int, font_size: int = 22, width_scale: float = 1.0) -> Image.Image:
-    footer_lines = [
-        "- El costo mínimo de revisión es de $4. Este valor podría incrementarse",
-        "  dependiendo del modelo de su dispositivo.",
-        "- Recuerde: en la revisión de su dispositivo utilizamos materiales,",
-        "  herramientas y tiempo de trabajo.",
-        "- El tiempo máximo para retirar su dispositivo es de 3 meses."
-    ]
-    if not footer_lines:
+def build_footer_image(total_width: int, font_size: int = 22, width_scale: float = 1.0, es_servicio_tecnico: bool = False) -> Image.Image:
+    
+    # 1. Definición de textos
+    if es_servicio_tecnico:
+        footer_lines = [
+            "- El costo mínimo de revisión es de $4. Este valor podría incrementarse",
+            "  dependiendo del modelo de su dispositivo.",
+            "- Recuerde: en la revisión de su dispositivo utilizamos materiales,",
+            "  herramientas y tiempo de trabajo.",
+            "- El tiempo máximo para retirar su dispositivo es de 3 meses."
+        ]
+        last_line = None # En servicio técnico no hay línea especial al final
+    else:
+        footer_lines = [
+            "- Por favor, verifique que el estuche sea el modelo correcto para su",
+            "  dispositivo; la selección errónea generará costos adicionales.",
+            "- El tiempo máximo de retiro es de 1 mes."
+        ]
+        last_line = "TEAMCELLMANIA" # Tu "ultima linea" personalizada
+
+    if not footer_lines and not last_line:
         return Image.new('1', (total_width, 1), 'white')
-    scaled_width = int(total_width * width_scale)  # ← ancho escalado
+
+    scaled_width = int(total_width * width_scale)
     tmp = ImageDraw.Draw(Image.new('RGB', (1, 1)))
 
+    # 2. Calcular tamaño para las líneas normales
     best_size = font_size
     for line in footer_lines:
         size = font_size
@@ -211,24 +225,42 @@ def build_footer_image( total_width: int, font_size: int = 22, width_scale: floa
             size -= 1
         best_size = min(best_size, size)
 
-    font        = _font("arialbd.ttf", best_size)
+    font_normal = _font("arialbd.ttf", best_size)
     line_height = best_size + 10
-    height      = line_height * len(footer_lines)
+    
+    # 3. Calcular tamaño para la línea especial (un poco más grande)
+    special_size = best_size + 4 
+    font_special = _font("arialbd.ttf", special_size)
+    
+    # 4. Calcular altura total del canvas
+    total_height = (line_height * len(footer_lines))
+    if last_line:
+        total_height += (special_size + 15) # Espacio extra para la última línea
 
-    img  = Image.new('RGB', (scaled_width, height), 'white')  # ← usa scaled_width
+    img = Image.new('RGB', (scaled_width, total_height), 'white')
     draw = ImageDraw.Draw(img)
 
+    # 5. Dibujar líneas normales
     y = 0
     for line in footer_lines:
-        draw.text((0, y), line, fill='black', font=font)
-        bbox = draw.textbbox((0, 0), line, font=font)
+        draw.text((0, y), line, fill='black', font=font_normal)
+        bbox = draw.textbbox((0, 0), line, font=font_normal)
         underline_y = y + bbox[3] + 1
         draw.line((0, underline_y, bbox[2] - bbox[0], underline_y), fill='black', width=1)
         y += line_height
 
+    # 6. Dibujar la última línea alineada al CENTRO
+    if last_line:
+        bbox_special = draw.textbbox((0, 0), last_line, font=font_special)
+        text_width = bbox_special[2] - bbox_special[0]
+        
+        # Cálculo para centrar: (Ancho Total - Ancho Texto) / 2
+        x_center = (scaled_width - text_width) // 2
+        
+        # Dibujar el texto en la posición calculada
+        draw.text((x_center, y + 5), last_line, fill='black', font=font_special)
+
     return img.convert('1')
-
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Imagen combinada: texto (izquierda) | patrón (derecha)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -348,4 +380,32 @@ def build_company_name_image(company_name: str, total_width: int, font_size: int
     x      = (total_width - (bbox[2] - bbox[0])) // 2  # centrado horizontal
     y      = (height - (bbox[3] - bbox[1])) // 2       # centrado vertical
     draw.text((x, y), company_name, fill='black', font=font)
+    return img.convert('1')
+
+
+def build_text_image(text: str, total_width: int, font_size: int = 30, bold: bool = True) -> Image.Image:
+    """
+    Crea una imagen a partir de un texto simple para la impresora térmica.
+    """
+    # Elegir fuente
+    font_path = "arialbd.ttf" if bold else "arial.ttf"
+    font = _font(font_path, font_size)
+    
+    # Crear un canvas temporal para medir el texto
+    tmp_draw = ImageDraw.Draw(Image.new('RGB', (1, 1)))
+    bbox = tmp_draw.textbbox((0, 0), text, font=font)
+    text_width = bbox[2] - bbox[0]
+    text_height = bbox[3] - bbox[1]
+
+    # Crear la imagen final con fondo blanco
+    # Añadimos un pequeño margen de 10px en la altura
+    img = Image.new('RGB', (total_width, text_height + 15), 'white')
+    draw = ImageDraw.Draw(img)
+
+    # Calcular posición para centrar el texto
+    x = (total_width - text_width) // 2
+    y = 5  # Un pequeño margen superior
+
+    draw.text((x, y), text, fill='black', font=font)
+
     return img.convert('1')
