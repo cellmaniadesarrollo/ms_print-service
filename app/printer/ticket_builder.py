@@ -218,7 +218,12 @@ def print_workshop_ticket(printer, data: dict, config: AppConfig) -> None:
         text_lines.append(f"Patron: {data['patron']}")
     
     if data['received_by']:
-        text_lines.append(f"Recibe: {data['received_by']}")
+        # Une recibe + técnicos en una sola línea: "Recibe: M. ADMIN | A. VÁSQUEZ / D. MOLINA"
+        techs = " / ".join(data['technicians_abbrev'])
+        recibe_line = f"Recibe: {data['received_by']}"
+        if techs:
+            recibe_line += f"  |{techs}"
+        text_lines.append(recibe_line)
 
     has_patron = bool(data['patron'])
 

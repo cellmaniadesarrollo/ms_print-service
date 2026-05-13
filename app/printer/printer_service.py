@@ -59,21 +59,36 @@ def _validate(data: dict) -> str | None:
     return None
 
 
+# ── Helper: "MARIA CHRISTIAN RIOS" → "M. CHRISTIAN RIOS"
+#            "Andrés Santiago" + "Vásquez Cedeño" → "A. VÁSQUEZ"
+def _abbrev_name(first_name: str, last_name: str = "") -> str:
+    """
+    Devuelve la inicial del primer nombre seguida del resto de los nombres/apellidos.
+    Si solo hay un token (ej. username sin espacio), devuelve el valor tal cual en mayúsculas.
+
+    Ejemplos:
+        ("MARIA CHRISTIAN", "")        → "M. CHRISTIAN"
+        ("MARIA", "CHRISTIAN RIOS")    → "M. CHRISTIAN RIOS"
+        ("Andrés Santiago", "Vásquez") → "A. VÁSQUEZ"
+        ("TEAMCELLMANIA_admin", "")    → "TEAMCELLMANIA_ADMIN"  ← sin espacio, sin cambio
+    """
+    full = f"{first_name} {last_name}".strip().upper()
+    tokens = full.split()
+    if len(tokens) <= 1:
+        return full                          # username sin espacios → sin abreviar
+    return f"{tokens[0][0]}. {' '.join(tokens[1:])}"
+
+
 def _extract(data: dict, qr_base_url: str) -> tuple[dict | None, str | None]:
-    """
-    Transforma el payload crudo en un diccionario limpio y normalizado
-    que ticket_builder puede usar directamente.
-    """
-    # Parseo de fecha de ingreso
+    # ... (todo el código previo igual hasta los accesos seguros) ...
+
     entry_date_raw = data.get("entry_date", "")
     try:
-        # Soporta ISO con Z (UTC) → lo convertimos a objeto datetime
         entry_dt_utc = datetime.fromisoformat(entry_date_raw.replace("Z", "+00:00"))
         entry_dt = entry_dt_utc.astimezone(TZ_EC)
     except (ValueError, TypeError) as e:
         return None, f"Formato inválido en entry_date: '{entry_date_raw}' → {e}"
 
-    # Accesos seguros a estructuras anidadas
     company    = data.get("company")    or {}
     customer   = data.get("customer")   or {}
     device     = data.get("device")     or {}
@@ -81,59 +96,61 @@ def _extract(data: dict, qr_base_url: str) -> tuple[dict | None, str | None]:
     created_by = data.get("createdBy")  or {}
     contacts   = customer.get("contacts") or []
 
-    # Modelo del equipo (puede venir como str o como dict)
-    model_info = device.get("model") or {}
+    model_info   = device.get("model") or {}
     device_model = (
         model_info.get("models_name") if isinstance(model_info, dict) else safe_str(model_info)
     )
-
-    imeis = device.get("imeis") or [{}]
-
+    imeis     = device.get("imeis") or [{}]
     public_id = safe_str(data.get("public_id"))
-    qr_url = safe_str(data.get("qr_url"))
+    qr_url    = safe_str(data.get("qr_url"))
     if not qr_url and qr_base_url and public_id:
         qr_url = f"{qr_base_url.rstrip('/')}/{public_id}"
     order_type = (data.get("type") or {}).get("name", "").upper()
-    # Construimos el diccionario final normalizado
+
+    # ── Técnicos asignados → lista de abreviaciones ──────────────────────────
+    technicians_abbrev: list[str] = [
+        f"{safe_str(t.get('first_name'))[0]}. {safe_str(t.get('last_name'))[0]}."
+        for t in (data.get("technicians") or [])
+        if t.get("first_name") and t.get("last_name")
+    ]
+
     return {
-        # Orden / identificación
-        "order_number":   safe_str(data.get("order_number")),
-        "entry_dt":       entry_dt,
-        "entry_date_str": entry_dt.strftime("%d/%m/%Y %H:%M"),
-        "public_id":      public_id,
-        "qr_url":         qr_url,
+        "order_number":       safe_str(data.get("order_number")),
+        "entry_dt":           entry_dt,
+        "entry_date_str":     entry_dt.strftime("%d/%m/%Y %H:%M"),
+        "public_id":          public_id,
+        "qr_url":             qr_url,
 
-        # Empresa
-        "company_name":   company.get("name", "").strip().upper(),
-        "branch_name":    branch.get("name", "").strip().upper(),
+        "company_name":       company.get("name", "").strip().upper(),
+        "branch_name":        branch.get("name", "").strip().upper(),
 
-        # Cliente
-        "customer_name":  (
+        "customer_name":      (
             f"{safe_str(customer.get('firstName'))} "
             f"{safe_str(customer.get('lastName'))}"
         ).strip().upper(),
-        "customer_ci":    safe_str(customer.get("idNumber")),
-        # Todos los números MÓVIL del cliente (para el ticket de taller)
-        "mobile_phones":  [
+        "customer_ci":        safe_str(customer.get("idNumber")),
+        "mobile_phones":      [
             safe_str(c.get("value"))
             for c in contacts
             if c.get("typeName") == "MÓVIL" and c.get("value")
         ],
 
-        # Equipo
-        "device_model":   device_model,
-        "imei":           safe_str(imeis[0].get("imei_number") if imeis else ""),
+        "device_model":       device_model,
+        "imei":               safe_str(imeis[0].get("imei_number") if imeis else ""),
 
-        # Detalles del ingreso
-        "motivo":         safe_str(data.get("detalleIngreso")).upper(),
-        "patron":         safe_str(data.get("patron")),
-        "password":       safe_str(data.get("password")),
+        "motivo":             safe_str(data.get("detalleIngreso")).upper(),
+        "patron":             safe_str(data.get("patron")),
+        "password":           safe_str(data.get("password")),
 
-        # Quién recibió
-        "received_by":    safe_str(created_by.get("first_name")),
-        "received_phone": safe_str(created_by.get("phone")),
+        # ── Quién recibió (abreviado) + técnicos asignados ───────────────────
+        "received_by":        _abbrev_name(
+                                  safe_str(created_by.get("first_name")),
+                                  safe_str(created_by.get("last_name")),
+                              ),
+        "received_phone":     safe_str(created_by.get("phone")),
+        "technicians_abbrev": technicians_abbrev,   # ← NUEVO
 
-        "order_type": order_type
+        "order_type":         order_type,
     }, None
 
 
