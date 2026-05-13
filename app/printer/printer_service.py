@@ -62,35 +62,41 @@ def _validate(data: dict) -> str | None:
 
 def _abbrev_name(first_name: str, last_name: str = "") -> str:
     """
-    Inicial del primer nombre + primer apellido.
-    Ignora segundos nombres y segundos apellidos.
-
+    Nombre (primer token) completo + Inicial del primer apellido.
+    
     Casos soportados:
-        ("CHRISTIAN MICHAEL", "SUAREZ PESANTEZ") → "C. SUAREZ"
-        ("CHRISTIAN",         "SUAREZ PESANTEZ") → "C. SUAREZ"
-        ("CHRISTIAN MICHAEL", "SUAREZ")          → "C. SUAREZ"
-        ("CHRISTIAN",         "SUAREZ")          → "C. SUAREZ"
-        ("MARIA CHRISTIAN",   "")                → "M. CHRISTIAN"  ← apellido vacío: usa 2º token del first_name
-        ("TEAMCELLMANIA_admin","")               → "TEAMCELLMANIA_ADMIN"  ← sin espacios: sin cambio
+        ("CHRISTIAN MICHAEL", "SUAREZ PESANTEZ") → "CHRISTIAN S."
+        ("CHRISTIAN",         "SUAREZ PESANTEZ") → "CHRISTIAN S."
+        ("MARIA CHRISTIAN",   "SUAREZ")          → "MARIA S."
+        ("CHRISTIAN",         "SUAREZ")          → "CHRISTIAN S."
+        ("TEAMCELLMANIA_admin","")               → "TEAMCELLMANIA_ADMIN"
+        ("", "SUAREZ PESANTEZ")                  → "S."
     """
     fn_tokens = first_name.strip().upper().split()
     ln_tokens = last_name.strip().upper().split()
 
+    # Si no hay nombre, solo devolvemos inicial del apellido
     if not fn_tokens:
-        return last_name.strip().upper() or ""
+        if ln_tokens:
+            return f"{ln_tokens[0][0]}."
+        return ""
 
-    inicial = fn_tokens[0][0]
+    # Tomamos solo el primer nombre (ignoramos segundos nombres)
+    primer_nombre = fn_tokens[0]
 
     if ln_tokens:
-        # Caso normal: hay apellido → inicial + primer apellido
-        return f"{inicial}. {ln_tokens[0]}"
-    elif len(fn_tokens) > 1:
-        # Sin apellido pero hay segundo nombre → inicial + segundo nombre
-        # (ej. "MARIA CHRISTIAN" que llega todo en first_name)
-        return f"{inicial}. {fn_tokens[1]}"
+        # Caso normal: Nombre completo + Inicial del primer apellido
+        inicial_apellido = ln_tokens[0][0]
+        return f"{primer_nombre} {inicial_apellido}."
     else:
-        # Solo un token sin apellido → username sin espacios, devolver tal cual
-        return fn_tokens[0]
+        # Solo hay nombre (sin apellido)
+        if len(fn_tokens) > 1:
+            # Si no hay apellido pero llegaron dos tokens, tomamos el primero como nombre
+            # y el segundo como apellido (comportamiento que pediste)
+            return f"{fn_tokens[0]} {fn_tokens[1][0]}."
+        else:
+            # Solo un token → lo devolvemos tal cual (username, etc.)
+            return primer_nombre
 
 
 def _abbrev_tech(first_name: str, last_name: str) -> str:
