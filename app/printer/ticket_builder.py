@@ -206,8 +206,12 @@ def print_workshop_ticket(printer, data: dict, config: AppConfig) -> None:
         text_lines.append(f"Movil: {phone}")
     
     if data['device_model']:
-        text_lines.append(f"Equipo: {data['device_model'][:28]}")
-    
+        device_line = data['device_model'][:28]
+        if data.get('device_type'):
+            device_line += f" ({data['device_type']})"  # ej: "S758 (TABLET)"
+        text_lines.append(f"Equipo: {device_line}")
+    if data.get('observations'):                         # ← nuevo, None/vacío se omite
+        text_lines.append(f"Obs: {data['observations'][:40]}")
     if data.get('imei'):
         text_lines.append(f"IMEI: {data['imei']}")
     

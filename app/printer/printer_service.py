@@ -183,7 +183,9 @@ def _extract(data: dict, qr_base_url: str) -> tuple[dict | None, str | None]:
 
         # Equipo
         "device_model":       device_model,
+        "device_type":        safe_str((device.get("type") or {}).get("name")).upper(),  # ← nuevo
         "imei":               safe_str(imeis[0].get("imei_number") if imeis else ""),
+        "observations":       safe_str(device.get("observations")).upper() or None,     
 
         # Detalles del ingreso
         "motivo":             safe_str(data.get("detalleIngreso")).upper(),
@@ -289,6 +291,7 @@ class PrinterService:
             printer._raw(b'\x1B\x21\x01')  # Negrita + doble altura
             printer._raw(b'\x0F')          # Modo condensado
 
+            print_payment_ticket(printer, req, self.config)
             print_payment_ticket(printer, req, self.config)
 
             printer._raw(b'\x12')          # Cancelar condensado
