@@ -19,7 +19,9 @@ from app.printer.image_builder import (
     build_footer_image,
     build_company_name_image,
     build_text_image,
+    build_copy_box_image
 )
+from app.printer.copy_box_text import print_copy_box_text 
 from app.constants import LOGO_TEAMCELL_PERSONALIZADO_B64
 
 def _assets_path() -> Path:
@@ -91,7 +93,13 @@ def print_customer_ticket(printer, data: dict, config: AppConfig) -> None:
         printer.image(company_img, center=True)
         # printer.text("\n")
 
-
+    if data["is_copy"]:
+            print_copy_box_text(
+                printer,
+                printed_by=data["printed_by"],
+                copy_printed_at=data["copy_printed_at"],
+                requested_by=data.get("requested_by", ""),
+            )
     es_miercoles = data['entry_dt'].weekday() == 2
     # 2. ¿Es Servicio Técnico? (Cuidado con las tildes, mejor usar .upper())
     es_servicio_tecnico = data.get('order_type') == "SERVICIO TECNICO"
@@ -129,6 +137,7 @@ def print_customer_ticket(printer, data: dict, config: AppConfig) -> None:
         if data['received_phone']:
             line += f" - {data['received_phone']}"
         printer.text(line + "\n")
+    
 
     # QR — el cliente sí necesita la explicación
     if feat.print_qr and data['qr_url']:
@@ -136,7 +145,7 @@ def print_customer_ticket(printer, data: dict, config: AppConfig) -> None:
         printer.text("Escanee el codigo QR para ver el estado.")
         printer.qr(data['qr_url'], size=3)
 
-   
+      
     printer.set(align="left")
     footer_img = build_footer_image(config.paper_px, width_scale=1.2,es_servicio_tecnico=es_servicio_tecnico)
     printer.image(footer_img, center=False)
@@ -185,6 +194,13 @@ def print_workshop_ticket(printer, data: dict, config: AppConfig) -> None:
         printer.image(company_img, center=True)
         # printer.text("\n")
 
+    if data["is_copy"]:
+            print_copy_box_text(
+                printer,
+                printed_by=data["printed_by"],
+                copy_printed_at=data["copy_printed_at"],
+                requested_by=data.get("requested_by", ""),
+            )
     # ==================== CABECERA CON SUCURSAL ====================
     printer.set(align="center", bold=False, font='b', width=1, height=1)
     printer.text(f"{data['entry_date_str']} | No: {data['order_number']}\n")
@@ -255,6 +271,7 @@ def print_workshop_ticket(printer, data: dict, config: AppConfig) -> None:
             printer.text(data['motivo'][i:i+64] + "\n")
         printer.text("\n")
 
+       
     if has_patron and feat.print_qr and data['qr_url']:
         printer.set(align="center", font='b', width=1, height=1, bold=False)
         printer.qr(data['qr_url'], size=3)

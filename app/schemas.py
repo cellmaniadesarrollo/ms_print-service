@@ -40,3 +40,7 @@ class OrderData(BaseModel):
     createdBy: Optional[CreatedBy] = None
     qr_url: Optional[str] = None  # si lo envías desde frontend, sino lo generamos
     public_id: Optional[str] = None
+    is_copy: Optional[bool] = False
+    printed_by: Optional[str] = None      # quién ejecutó la reimpresión
+    requested_by: Optional[str] = None    # quién la pidió (si es distinto)
+    ticket_type: Optional[str] = "both"   # "customer" | "workshop" | "both"

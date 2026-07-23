@@ -108,3 +108,7 @@ class PaymentTicketRequest(BaseModel):
     receivedBy: ReceivedBySchema
     reference: Optional[str] = Field(None, description="Referencia de caja, ej: 'EFECT-025'")
     observation: Optional[str] = Field(None, description="Nota libre sobre el pago")
+    is_copy: Optional[bool] = False
+    printed_by: Optional[str] = None
+    requested_by: Optional[str] = None
+    copies: Optional[int] = 2   # preserva el comportamiento actual (2 por defecto)

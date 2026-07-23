@@ -156,7 +156,7 @@ def _extract(data: dict, qr_base_url: str) -> tuple[dict | None, str | None]:
         for t in (data.get("technicians") or [])
         if t.get("first_name") and t.get("last_name")
     ]
-
+    is_copy = bool(data.get("is_copy", False))
     return {
         # Orden / identificación
         "order_number":       safe_str(data.get("order_number")),
@@ -200,6 +200,12 @@ def _extract(data: dict, qr_base_url: str) -> tuple[dict | None, str | None]:
         "received_phone":     safe_str(created_by.get("phone")),
         "technicians_abbrev": technicians_abbrev,
 
+        "is_copy":          is_copy,
+        "printed_by":       safe_str(data.get("printed_by")) if is_copy else "",
+        "requested_by":     safe_str(data.get("requested_by")) if is_copy else "",
+        "copy_printed_at":  datetime.now(TZ_EC).strftime("%d/%m/%Y %H:%M") if is_copy else "",
+
+
         "order_type":         order_type,
     }, None
 
@@ -227,26 +233,30 @@ class PrinterService:
         if error:
             return {"success": False, "message": error}
 
-        # ── 2. Extracción y normalización ────────────────────────────────────
         extracted, error = _extract(data, self.config.ticket.qr_base_url)
         if error:
             return {"success": False, "message": error}
 
-        # ── 3. Impresión real ────────────────────────────────────────────────
+        ticket_type = (data.get("ticket_type") or "both").lower()
+        if ticket_type not in ("customer", "workshop", "both"):
+            ticket_type = "both"
+
         printer = None
         try:
             printer = open_printer(self.config)
 
-            printer._raw(b'\x1B\x21\x01')  # Negrita + doble altura
-            printer._raw(b'\x0F')          # Modo condensado
+            printer._raw(b'\x1B\x21\x01')
+            printer._raw(b'\x0F')
 
-            print_customer_ticket(printer, extracted, self.config)
-            print_workshop_ticket(printer, extracted, self.config)
+            if ticket_type in ("customer", "both"):
+                print_customer_ticket(printer, extracted, self.config)
+            if ticket_type in ("workshop", "both"):
+                print_workshop_ticket(printer, extracted, self.config)
 
-            printer._raw(b'\x12')          # Cancelar condensado
-            printer._raw(b'\x1B\x21\x00')  # Resetear formato
+            printer._raw(b'\x12')
+            printer._raw(b'\x1B\x21\x00')
 
-            print("✓ Impresión REAL completada")
+            print(f"✓ Impresión REAL completada ({ticket_type})")
             return {"success": True, "message": "Ticket impreso con éxito"}
 
         except (DeviceNotFoundError, EscposError) as e:
@@ -283,21 +293,24 @@ class PrinterService:
         except Exception as e:
             return {"success": False, "message": f"Datos de pago inválidos: {e}"}
 
-        # ── 2. Impresión ─────────────────────────────────────────────────────
+        # Límite de seguridad: entre 1 y 5 copias, por si llega un valor mal formado
+        copies = req.copies if req.copies and req.copies > 0 else 2
+        copies = max(1, min(copies, 5))
+
         printer = None
         try:
             printer = open_printer(self.config)
 
-            printer._raw(b'\x1B\x21\x01')  # Negrita + doble altura
-            printer._raw(b'\x0F')          # Modo condensado
+            printer._raw(b'\x1B\x21\x01')
+            printer._raw(b'\x0F')
 
-            print_payment_ticket(printer, req, self.config)
-            print_payment_ticket(printer, req, self.config)
+            for _ in range(copies):
+                print_payment_ticket(printer, req, self.config)
 
-            printer._raw(b'\x12')          # Cancelar condensado
-            printer._raw(b'\x1B\x21\x00')  # Resetear formato
+            printer._raw(b'\x12')
+            printer._raw(b'\x1B\x21\x00')
 
-            print("✓ Comprobante de abono impreso")
+            print(f"✓ Comprobante de abono impreso ({copies}x)")
             return {"success": True, "message": "Comprobante impreso con éxito"}
 
         except (DeviceNotFoundError, EscposError) as e:

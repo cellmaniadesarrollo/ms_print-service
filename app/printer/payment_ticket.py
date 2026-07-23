@@ -14,9 +14,9 @@ from __future__ import annotations
 from datetime import timezone
 
 from app.config import AppConfig
-from app.printer.image_builder import build_company_name_image, build_footer_image
+from app.printer.image_builder import build_company_name_image, build_footer_image,build_copy_box_image
 from app.printer.schemas import PaymentTicketRequest
-
+from app.printer.copy_box_text import print_copy_box_text 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Extracción y normalización
@@ -27,6 +27,7 @@ def _extract_payment(req: PaymentTicketRequest) -> dict:
     Transforma el modelo Pydantic en un dict plano listo para imprimir.
     Toda la lógica de formato de fechas/strings vive aquí.
     """
+    from datetime import datetime
     # Convertir fechas UTC → local naive para mostrar
     def _fmt_dt(dt) -> str:
         """'2026-04-15T22:20:55Z' → '15/04/2026  22:20'"""
@@ -40,10 +41,12 @@ def _extract_payment(req: PaymentTicketRequest) -> dict:
     order = req.order
     received = req.receivedBy
 
+    is_copy = bool(req.is_copy)
+    serial = f"AB-{req.id:08d}"   # ej: AB-00001234
     return {
         # Cabecera
         "company_name":   order.company.name,
-
+        "serial":         serial,  
         # Orden
         "order_number":   order.order_number,
         "entry_date_str": _fmt_dt(order.entry_date),
@@ -68,6 +71,11 @@ def _extract_payment(req: PaymentTicketRequest) -> dict:
         # Recibido por
         "received_by":    f"{received.first_name} {received.last_name}",
         "received_phone": received.phone or "",
+
+        "is_copy":         is_copy,
+        "printed_by":      (req.printed_by or "") if is_copy else "",
+        "requested_by":    (req.requested_by or "") if is_copy else "",
+        "copy_printed_at": _fmt_dt(datetime.now()) if is_copy else "",
 
         # Cliente
         "customer": f"{order.customer.firstName} {order.customer.lastName}",
@@ -114,6 +122,16 @@ def print_payment_ticket(printer, req: PaymentTicketRequest, config: AppConfig) 
     # ── Título del comprobante ───────────────────────────────────────────────
     printer.set(align="center", bold=True, font="b", width=1, height=1)
     printer.text("COMPROBANTE DE ABONO\n")
+        # ── Serial del comprobante ───────────────────────────────────────────────
+    printer.set(align="center", bold=False, font="a", width=1, height=1)
+    printer.text(f"No. {data['serial']}\n")
+    if data["is_copy"]:
+        print_copy_box_text(
+            printer,
+            printed_by=data["printed_by"],
+            copy_printed_at=data["copy_printed_at"],
+            requested_by=data.get("requested_by", ""),
+        )
     printer.text(f"Cliente: {data['customer']}\n")
 
     # ── Datos de la orden ────────────────────────────────────────────────────
@@ -137,6 +155,7 @@ def print_payment_ticket(printer, req: PaymentTicketRequest, config: AppConfig) 
     if data["received_phone"]:
         line += f"  {data['received_phone']}"
     printer.text(line + "\n")
+
 
     # ── Observación (opcional) ───────────────────────────────────────────────
     if data["observation"]:

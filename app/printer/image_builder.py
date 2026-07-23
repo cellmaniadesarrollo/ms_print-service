@@ -361,15 +361,24 @@ def build_side_by_side(
 
     return combined.convert('1')
 
-def build_company_name_image(company_name: str, total_width: int, font_size: int = 72) -> Image.Image:
-    # Reducir el font_size hasta que el texto quepa en el ancho
+def build_company_name_image(
+    company_name: str,
+    total_width: int,
+    font_size: int = 72,
+    dash_length: int = 40,     # largo de cada guion
+    dash_thickness: int = 5,   # grosor de la línea
+    dash_gap: int = 16,        # espacio entre el guion y el texto
+) -> Image.Image:
+    # Reducir el font_size hasta que el texto + guiones quepan en el ancho
     font = _font("arialbd.ttf", font_size)
     tmp  = ImageDraw.Draw(Image.new('RGB', (1, 1)))
+    extra_space = (dash_length + dash_gap) * 2
+
     while font_size > 20:
         font = _font("arialbd.ttf", font_size)
         bbox = tmp.textbbox((0, 0), company_name, font=font)
         text_width = bbox[2] - bbox[0]
-        if text_width <= total_width - 10:  # margen de 5px a cada lado
+        if text_width + extra_space <= total_width - 10:
             break
         font_size -= 2
 
@@ -377,11 +386,32 @@ def build_company_name_image(company_name: str, total_width: int, font_size: int
     img    = Image.new('RGB', (total_width, height), 'white')
     draw   = ImageDraw.Draw(img)
     bbox   = draw.textbbox((0, 0), company_name, font=font)
-    x      = (total_width - (bbox[2] - bbox[0])) // 2  # centrado horizontal
-    y      = (height - (bbox[3] - bbox[1])) // 2       # centrado vertical
-    draw.text((x, y), company_name, fill='black', font=font)
-    return img.convert('1')
+    text_width = bbox[2] - bbox[0]
 
+    total_content_width = text_width + extra_space
+    start_x = (total_width - total_content_width) // 2
+
+    y_text = (height - (bbox[3] - bbox[1])) // 2
+    y_dash = height // 2
+
+    # ── Guion izquierdo ──
+    draw.line(
+        (start_x, y_dash, start_x + dash_length, y_dash),
+        fill='black', width=dash_thickness,
+    )
+
+    # ── Texto ──
+    x_text = start_x + dash_length + dash_gap
+    draw.text((x_text, y_text), company_name, fill='black', font=font)
+
+    # ── Guion derecho ──
+    x_dash2 = x_text + text_width + dash_gap
+    draw.line(
+        (x_dash2, y_dash, x_dash2 + dash_length, y_dash),
+        fill='black', width=dash_thickness,
+    )
+
+    return img.convert('1')
 
 def build_text_image(text: str, total_width: int, font_size: int = 30, bold: bool = True) -> Image.Image:
     """
@@ -407,5 +437,55 @@ def build_text_image(text: str, total_width: int, font_size: int = 30, bold: boo
     y = 5  # Un pequeño margen superior
 
     draw.text((x, y), text, fill='black', font=font)
+
+    return img.convert('1')
+
+
+def build_copy_box_image(
+    printed_by: str,
+    copy_printed_at: str,
+    requested_by: str,
+    total_width: int,
+    font_size: int = 26,
+    padding: int = 12,
+    border_thickness: int = 3,
+    margin: int = 6,
+) -> Image.Image:
+    font_bold = _font("arialbd.ttf", font_size)
+    font_reg  = _font("arial.ttf", int(font_size * 0.75))
+
+    lines = ["*** COPIA ***", f"{printed_by} | {copy_printed_at}"]
+    if requested_by:
+        lines.append(f"Solicitada por: {requested_by}")
+
+    # medir alturas
+    dummy = Image.new("RGB", (1, 1))
+    d = ImageDraw.Draw(dummy)
+    line_heights = []
+    for i, line in enumerate(lines):
+        f = font_bold if i == 0 else font_reg
+        bbox = d.textbbox((0, 0), line, font=f)
+        line_heights.append(bbox[3] - bbox[1])
+
+    box_height = sum(line_heights) + padding * (len(lines) + 1)
+
+    img = Image.new("RGB", (total_width, box_height), (255, 255, 255))
+    draw = ImageDraw.Draw(img)
+
+    # ── Solo el borde (sin relleno) ──
+    draw.rectangle(
+        [margin, 0, total_width - margin, box_height - 1],
+        fill=None, outline=(0, 0, 0), width=border_thickness,
+    )
+
+    # ── Texto en negro, centrado, dentro del recuadro ──
+    y = padding
+    for i, line in enumerate(lines):
+        f = font_bold if i == 0 else font_reg
+        bbox = draw.textbbox((0, 0), line, font=f)
+        w = bbox[2] - bbox[0]
+        x = (total_width - w) // 2
+        draw.text((x, y), line, font=f, fill=(0, 0, 0))
+        y += line_heights[i] + padding
 
     return img.convert('1')
