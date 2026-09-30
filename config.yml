@@ -1,0 +1,7 @@
+tunnel: gye001
+credentials-file: /etc/cloudflared/57365d6a-df7f-4664-86f4-588e03b6dc29.json
+
+ingress:
+  - hostname: print.teamcellmania.com
+    service: http://127.0.0.1:56790
+  - service: http_status:404

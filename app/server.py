@@ -8,14 +8,20 @@ MÓDULO DEL SERVIDOR HTTPS
     a través de HTTPS en el puerto indicado en la variable de entorno PORT
     (por defecto: 56789).
 
+    Además levanta un segundo servidor HTTP (solo local) en TUNNEL_PORT
+    (por defecto: 56790) que sirve de "puerta de entrada" para el túnel de
+    Cloudflare, y arranca automáticamente ese túnel (ver app/tunnel.py).
+
     El servidor corre en un hilo (thread) secundario para no bloquear
     el hilo principal, que está ocupado mostrando el ícono en la bandeja.
 
 ¿Qué es un hilo (thread)?
-    Imagina que el programa tiene dos empleados trabajando al mismo tiempo:
+    Imagina que el programa tiene varios empleados trabajando al mismo tiempo:
       - Empleado A (hilo principal) → muestra el ícono en la bandeja del sistema.
       - Empleado B (hilo secundario / daemon) → atiende peticiones HTTP.
-    daemon=True significa que si el hilo principal muere, B se cierra solo.
+      - Empleado C (hilo del túnel / daemon) → mantiene vivo cloudflared y
+        avisa al backend cuál es la URL pública actual.
+    daemon=True significa que si el hilo principal muere, B y C se cierran solos.
 
 ¿Qué es Uvicorn?
     Es el servidor web que ejecuta la aplicación FastAPI.
@@ -27,10 +33,25 @@ MÓDULO DEL SERVIDOR HTTPS
     HTTP locales (mixed-content). Al usar HTTPS con un certificado propio
     (self-signed o Let's Encrypt) se evita ese problema.
 
+¿Por qué hay un segundo puerto HTTP (TUNNEL_PORT)?
+    cloudflared se conecta a un servicio local. Es más simple que apunte a un
+    puerto HTTP plano (sin certificado propio que validar). Cloudflare ya
+    entrega HTTPS válido hacia afuera, y este puerto solo escucha en
+    127.0.0.1, así que nadie de la red local puede usarlo directamente.
+
+Flujo completo de impresión remota:
+    Arranca el .exe → cloudflared abre el túnel → imprime https://xxxx.trycloudflare.com
+    → tunnel.py detecta la URL → la registra en el backend (POST /api/print-endpoints/register)
+    → el backend guarda la URL en la colección printendpoints
+    → al crear una venta, el backend llama a esa URL (POST /api/print)
+
 Variables de entorno usadas:
-    PORT            → puerto donde escucha el servidor (default: 56789)
-    SSL_KEYFILE     → ruta al archivo .key del certificado SSL
-    SSL_CERTFILE    → ruta al archivo .pem del certificado SSL
+    PORT                  → puerto HTTPS (default: 56789)
+    TUNNEL_PORT           → puerto HTTP local para el túnel (default: 56790)
+    SSL_KEYFILE           → ruta al archivo .key del certificado SSL
+    SSL_CERTFILE          → ruta al archivo .pem del certificado SSL
+    (las del túnel —BACKEND_URL, PRINT_REGISTER_KEY, COMPANY_ID,
+     CODE_ESTABLECIMIENTO, CLOUDFLARED_PATH— se leen en app/tunnel.py)
 
 Notas para novatos:
     - asyncio.new_event_loop() crea un nuevo "bucle de eventos" para el hilo.
@@ -51,61 +72,56 @@ import time
 import uvicorn
 from uvicorn import Server, Config
 
+# Módulo nuevo: arranca cloudflared y registra la URL pública en el backend
+from app.tunnel import start_tunnel_in_thread
+
 
 def run_server(app) -> None:
-    """
-    Configura Uvicorn y bloquea el hilo hasta que el servidor se detenga.
-
-    Este función NO debe llamarse directamente desde el hilo principal;
-    usa run_server_in_thread() para eso.
-
-    Args:
-        app: la instancia de FastAPI definida en routes.py
-    """
-
-    # ── Puerto ────────────────────────────────────────────────────────────────
-    # int(...) convierte el string de la variable de entorno a número entero.
+    # Puertos: se leen del entorno, con valores por defecto
     port = int(os.getenv("PORT", "56789"))
+    tunnel_port = int(os.getenv("TUNNEL_PORT", "56790"))
 
-    # ── Rutas de los certificados SSL ─────────────────────────────────────────
-    # Valores por defecto apuntan a la subcarpeta certs/ del proyecto.
+    # Rutas del certificado SSL (solo lo usa el puerto HTTPS)
     key_file  = os.getenv("SSL_KEYFILE",  "certs/server.key")
     cert_file = os.getenv("SSL_CERTFILE", "certs/server.pem")
 
-    # Si la app está empaquetada como .exe con PyInstaller, los archivos
-    # auxiliares se extraen a sys._MEIPASS (carpeta temporal oculta).
+    # Si corre empaquetado como .exe (PyInstaller), los archivos están dentro
+    # de una carpeta temporal (_MEIPASS), así que se ajustan las rutas.
     if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
         base_path = sys._MEIPASS
         key_file  = os.path.join(base_path, key_file)
         cert_file = os.path.join(base_path, cert_file)
 
-    print(f"[INFO] Iniciando servidor HTTPS en puerto {port}")
-    print(f"[INFO] Dashboard: https://localhost:{port}/  (o vía subdominio)")
-    reload = os.getenv("RELOAD", "False").lower() == "true"
-    # ── Configuración de Uvicorn ───────────────────────────────────────────────
-    # Config() recibe todos los parámetros del servidor.
-    # host="0.0.0.0" → escucha en TODAS las interfaces de red de la máquina,
-    # no solo en localhost; así otros dispositivos en la misma LAN pueden acceder.
-    config_uvi = Config(
-        app=app,
-        host="0.0.0.0",
-        port=port,
-        reload=reload, 
-        ssl_keyfile=key_file,
-        ssl_certfile=cert_file, 
+    # Puerto 1: HTTPS normal (acceso desde el navegador / red local)
+    server_https = Server(Config(
+        app=app, host="0.0.0.0", port=port,
+        ssl_keyfile=key_file, ssl_certfile=cert_file,
         log_level="info",
-    )
+    ))
 
-    server = Server(config_uvi)
+    # Puerto 2: HTTP solo local, para el túnel de Cloudflare.
+    # host="127.0.0.1" → únicamente accesible desde esta misma PC.
+    server_tunnel = Server(Config(
+        app=app, host="127.0.0.1", port=tunnel_port,
+        log_level="info",
+    ))
 
-    # ── Event loop asíncrono ───────────────────────────────────────────────────
-    # Cada hilo necesita su propio event loop; no se puede compartir el del
-    # hilo principal.
+    # Uvicorn intenta manejar señales (Ctrl+C, etc.); en un hilo secundario
+    # eso no está permitido, así que se desactiva.
+    server_https.install_signal_handlers = lambda: None
+    server_tunnel.install_signal_handlers = lambda: None
+
+    # Corre ambos servidores a la vez dentro del mismo event loop
+    async def main():
+        await asyncio.gather(server_https.serve(), server_tunnel.serve())
+
+    print(f"[INFO] HTTPS en :{port}  |  Túnel (solo local) en 127.0.0.1:{tunnel_port}")
+
+    # Este hilo no tiene event loop propio: se crea uno y se asigna
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-
     try:
-        loop.run_until_complete(server.serve())   # ← bloquea hasta que el server pare
+        loop.run_until_complete(main())
     except Exception as e:
         print(f"[ERROR] Falló el servidor: {e}")
     finally:
@@ -115,10 +131,12 @@ def run_server(app) -> None:
 def run_server_in_thread(app) -> None:
     """
     Lanza run_server() en un hilo secundario daemon para no bloquear
-    el hilo principal (que usará la bandeja del sistema).
+    el hilo principal (que usará la bandeja del sistema), y después
+    arranca el túnel de Cloudflare.
 
     La pequeña pausa de 2.5 s permite que Uvicorn arranque y esté listo
-    antes de que el ícono de bandeja aparezca en pantalla.
+    antes de que el túnel empiece a apuntar a él y antes de que el ícono
+    de bandeja aparezca en pantalla.
 
     Args:
         app: la instancia de FastAPI definida en routes.py
@@ -132,5 +150,11 @@ def run_server_in_thread(app) -> None:
 
     # Esperamos un momento para que Uvicorn tenga tiempo de inicializarse.
     time.sleep(2.5)
+
+    # Arranca cloudflared y registra la URL pública en el backend.
+    # Corre en su propio hilo daemon: si el túnel se cae, se relanza solo
+    # y vuelve a registrar la nueva URL, sin afectar al servidor.
+    tunnel_port = int(os.getenv("TUNNEL_PORT", "56790"))
+    start_tunnel_in_thread(tunnel_port)
 
     print("[INFO] Thread del servidor lanzado")
