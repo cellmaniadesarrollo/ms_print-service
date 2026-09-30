@@ -1,5 +1,5 @@
 {
-  "connection": "network", 
+  "connection": "network",
   "network": {
     "ip": "192.168.10.161",
     "port": 9100,
@@ -30,5 +30,13 @@
     "printQr": true,
     "printPatternOnCustomerTicket": true,
     "printWednesdayPromo": true
+  },
+  "tunnel": {
+    "backend_url": "https://localhost:4500",
+    "register_key": "2818cbfc6f2ce4bfe81b209adc2519d7fcbde5ad235f34dda8cbb285a5b4b664a0bb08291bf6ddca8ecd20f31f31d1bd",
+    "company_id": "e72d7d55-a99f-46d5-999e-21af4c5e4831",
+    "code_establecimiento": "001",
+    "cloudflared_path": "/usr/local/bin/cloudflared-clean",
+    "verify_ssl": false
   }
 }
