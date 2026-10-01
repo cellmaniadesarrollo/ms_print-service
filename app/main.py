@@ -12,7 +12,9 @@ Orden de arranque:
     1. load_dotenv()            → carga el archivo .env en las variables de entorno.
                                   ¡DEBE ser lo primero! Antes de cualquier os.getenv().
     2. Parcheo PyInstaller      → ajusta rutas de recursos cuando corre como .exe.
-    3. Supresión de consola     → si se lanzó con --noconsole, redirige stdout/stderr.
+    3. Logs a archivo           → redirige stdout/stderr a un archivo con rotación en
+                                  %LOCALAPPDATA%/PrintService/logs/printservice.log
+                                  (antes se mandaba a os.devnull y se perdía todo).
     4. check_for_update()       → revisión inmediata al arrancar.
     5. _update_scheduler()      → hilo daemon que repite la revisión cada
                                   UPDATE_INTERVAL_MINUTES (definido en updater.py).
@@ -95,14 +97,94 @@ load_dotenv(dotenv_path=os.path.join(_get_exe_dir(), ".env"))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 3. Supresión de consola (modo producción)
+# 3. Logs a archivo (modo producción)
 # ─────────────────────────────────────────────────────────────────────────────
 # En producción el usuario no debe ver ventana de consola.
-# --noconsole de PyInstaller la oculta, pero redirigimos también por seguridad.
+# --noconsole de PyInstaller la oculta, y con ella sys.stdout/sys.stderr
+# pasan a ser None. Antes los mandábamos a os.devnull (se perdía todo);
+# ahora los mandamos a un archivo con rotación para poder diagnosticar
+# problemas en la PC de la tienda (por ejemplo el registro del túnel).
+#
+# Ubicación del log (carpeta con permisos de escritura, NO Program Files):
+#     %LOCALAPPDATA%\PrintService\logs\printservice.log
+#     (si no existe LOCALAPPDATA, usa ~/PrintService/logs/printservice.log)
+#
+# Rotación: 5 MB por archivo, se conservan 3 anteriores.
+# Si hay consola real (desarrollo con `poetry run dev`), se sigue
+# mostrando en pantalla Y además se guarda en el archivo.
 
-if '--noconsole' in sys.argv or not sys.stdout:
-    sys.stdout = open(os.devnull, 'w', encoding='utf-8')
-    sys.stderr = open(os.devnull, 'w', encoding='utf-8')
+import logging
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
+
+
+class _TeeToLog:
+    """
+    Reemplazo de sys.stdout / sys.stderr: cada línea impresa va al archivo
+    de log y, si existe una consola real, también a ella.
+    """
+
+    def __init__(self, logger: logging.Logger, level: int, original=None):
+        self._logger = logger
+        self._level = level
+        self._original = original
+        self._buf = ""
+
+    def write(self, msg: str) -> int:
+        if self._original:
+            try:
+                self._original.write(msg)
+            except Exception:
+                pass
+        self._buf += msg
+        while "\n" in self._buf:
+            line, self._buf = self._buf.split("\n", 1)
+            if line.strip():
+                self._logger.log(self._level, line)
+        return len(msg)
+
+    def flush(self) -> None:
+        if self._original:
+            try:
+                self._original.flush()
+            except Exception:
+                pass
+
+    def isatty(self) -> bool:
+        return False
+
+
+def _setup_file_logging() -> Path:
+    base = os.environ.get("LOCALAPPDATA") or str(Path.home())
+    log_dir = Path(base) / "PrintService" / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_file = log_dir / "printservice.log"
+
+    handler = RotatingFileHandler(
+        log_file, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
+    )
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+
+    logger = logging.getLogger("printservice")
+    logger.setLevel(logging.INFO)
+    logger.addHandler(handler)
+    logger.propagate = False
+
+    # Si no hay consola (--noconsole), sys.stdout/sys.stderr son None
+    sys.stdout = _TeeToLog(logger, logging.INFO, sys.stdout)
+    sys.stderr = _TeeToLog(logger, logging.ERROR, sys.stderr)
+    return log_file
+
+
+try:
+    LOG_FILE = _setup_file_logging()
+    print(f"[LOG] Escribiendo logs en {LOG_FILE}")
+except Exception:
+    # Si no se puede crear el log, caemos al comportamiento anterior
+    # para no impedir que la app arranque.
+    if '--noconsole' in sys.argv or not sys.stdout:
+        sys.stdout = open(os.devnull, 'w', encoding='utf-8')
+        sys.stderr = open(os.devnull, 'w', encoding='utf-8')
 
 
 # ── Importaciones propias (DESPUÉS de load_dotenv) ───────────────────────────
