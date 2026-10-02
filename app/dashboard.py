@@ -277,7 +277,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 </div>
 
 <footer>
-  <span>Print Service v1.1.14— FastAPI + uvicorn</span>
+  <span>Print Service v1.1.16— FastAPI + uvicorn</span>
   <span id="footer-port"></span>
 </footer>
 

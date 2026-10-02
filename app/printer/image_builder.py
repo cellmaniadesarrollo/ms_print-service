@@ -11,8 +11,10 @@ Funciones públicas:
     build_side_by_side(pattern_img, text_lines, total_width, text_pct)
 """
 
+ 
+import random
 from PIL import Image, ImageDraw, ImageFont
-
+from app.constants import MOTIVATIONAL_PHRASES
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Helper de fuentes
@@ -361,28 +363,42 @@ def build_side_by_side(
 
     return combined.convert('1')
 
+
 def build_company_name_image(
     company_name: str,
     total_width: int,
     font_size: int = 72,
     dash_length: int = 40,     # largo de cada guion
     dash_thickness: int = 5,   # grosor de la línea
-    dash_gap: int = 16,        # espacio entre el guion y el texto
+    dash_gap: int = 16,        # espacio entre la decoración y el texto
+    font_names: tuple = ("arialbd.ttf",),
+    decor: str = "dash",       # "dash" (guiones) o "heart" (corazones)
+    heart_size: int = 34,
+    heart_count: int = 2,      # corazones por lado
+    heart_gap: int = 8,
 ) -> Image.Image:
-    # Reducir el font_size hasta que el texto + guiones quepan en el ancho
-    font = _font("arialbd.ttf", font_size)
-    tmp  = ImageDraw.Draw(Image.new('RGB', (1, 1)))
-    extra_space = (dash_length + dash_gap) * 2
+    use_hearts = decor == "heart"
 
+    # Ancho que ocupa la decoración de cada lado
+    if use_hearts:
+        decor_width = heart_count * heart_size + (heart_count - 1) * heart_gap
+    else:
+        decor_width = dash_length
+
+    extra_space = (decor_width + dash_gap) * 2
+    tmp = ImageDraw.Draw(Image.new('RGB', (1, 1)))
+
+    # Reducir el font_size hasta que el texto + decoración quepan en el ancho
+    font = _font_first(font_names, font_size)
     while font_size > 20:
-        font = _font("arialbd.ttf", font_size)
+        font = _font_first(font_names, font_size)
         bbox = tmp.textbbox((0, 0), company_name, font=font)
         text_width = bbox[2] - bbox[0]
         if text_width + extra_space <= total_width - 10:
             break
         font_size -= 2
 
-    height = font_size + 20
+    height = font_size + (35 if use_hearts else 20)
     img    = Image.new('RGB', (total_width, height), 'white')
     draw   = ImageDraw.Draw(img)
     bbox   = draw.textbbox((0, 0), company_name, font=font)
@@ -392,27 +408,40 @@ def build_company_name_image(
     start_x = (total_width - total_content_width) // 2
 
     y_text = (height - (bbox[3] - bbox[1])) // 2
-    y_dash = height // 2
+    if use_hearts:
+        y_text -= bbox[1]  # compensa el offset vertical de fuentes cursivas
+    y_mid = height // 2
 
-    # ── Guion izquierdo ──
-    draw.line(
-        (start_x, y_dash, start_x + dash_length, y_dash),
-        fill='black', width=dash_thickness,
-    )
+    x_text  = start_x + decor_width + dash_gap
+    x_right = x_text + text_width + dash_gap
+
+    if use_hearts:
+        # ── Corazones izquierda ──
+        for i in range(heart_count):
+            cx = start_x + heart_size / 2 + i * (heart_size + heart_gap)
+            _draw_heart(draw, cx, y_mid - 2, heart_size)
+        # ── Corazones derecha ──
+        for i in range(heart_count):
+            cx = x_right + heart_size / 2 + i * (heart_size + heart_gap)
+            _draw_heart(draw, cx, y_mid - 2, heart_size)
+    else:
+        # ── Guion izquierdo ──
+        draw.line(
+            (start_x, y_mid, start_x + dash_length, y_mid),
+            fill='black', width=dash_thickness,
+        )
+        # ── Guion derecho ──
+        draw.line(
+            (x_right, y_mid, x_right + dash_length, y_mid),
+            fill='black', width=dash_thickness,
+        )
 
     # ── Texto ──
-    x_text = start_x + dash_length + dash_gap
     draw.text((x_text, y_text), company_name, fill='black', font=font)
-
-    # ── Guion derecho ──
-    x_dash2 = x_text + text_width + dash_gap
-    draw.line(
-        (x_dash2, y_dash, x_dash2 + dash_length, y_dash),
-        fill='black', width=dash_thickness,
-    )
 
     return img.convert('1')
 
+ 
 def build_text_image(text: str, total_width: int, font_size: int = 30, bold: bool = True) -> Image.Image:
     """
     Crea una imagen a partir de un texto simple para la impresora térmica.
@@ -489,3 +518,186 @@ def build_copy_box_image(
         y += line_heights[i] + padding
 
     return img.convert('1')
+
+
+# Cadena de fuentes "cursivas" para PARA REPUESTOS (Windows).
+# Usa la primera que exista; si ninguna, cae a Arial Bold.
+REPUESTOS_FONTS = ("segoescb.ttf", "BRUSHSCI.TTF", "comicbd.ttf", "arialbd.ttf")
+
+
+def _font_first(names, size: int):
+    """Devuelve la primera fuente TTF disponible de la lista."""
+    for n in names:
+        try:
+            return ImageFont.truetype(n, size)
+        except Exception:
+            continue
+    return ImageFont.load_default()
+
+
+def _draw_heart(draw: ImageDraw.ImageDraw, cx: float, cy: float, width: float) -> None:
+    """Dibuja un corazón relleno de color negro centrado en (cx, cy)."""
+    r = width / 4
+    # Dos círculos superiores
+    draw.ellipse((cx - 2 * r, cy - 1.5 * r, cx, cy + 0.5 * r), fill='black')
+    draw.ellipse((cx, cy - 1.5 * r, cx + 2 * r, cy + 0.5 * r), fill='black')
+    # Triángulo inferior
+    draw.polygon(
+        [
+            (cx - 1.9 * r, cy + 0.1 * r),
+            (cx + 1.9 * r, cy + 0.1 * r),
+            (cx, cy + 2.3 * r),
+        ],
+        fill='black',
+    )
+
+
+def build_motivational_footer_image(
+    total_width: int,
+    font_size: int = 26,
+    width_scale: float = 1.0,
+    phrase: str | None = None,
+) -> Image.Image:
+    """
+    Footer para órdenes PARA REPUESTOS: una frase motivacional aleatoria,
+    centrada y con salto de línea automático.
+    """
+    phrase = phrase or random.choice(MOTIVATIONAL_PHRASES)
+
+    scaled_width = int(total_width * width_scale)
+    max_text_w   = scaled_width - 20
+    font         = _font_first(REPUESTOS_FONTS, font_size)
+    tmp          = ImageDraw.Draw(Image.new('RGB', (1, 1)))
+
+    # ── Ajuste de línea por palabras ──
+    lines, current = [], ""
+    for word in phrase.split():
+        test = f"{current} {word}".strip()
+        w = tmp.textbbox((0, 0), test, font=font)[2]
+        if w <= max_text_w or not current:
+            current = test
+        else:
+            lines.append(current)
+            current = word
+    if current:
+        lines.append(current)
+
+    line_height  = font_size + 10
+    total_height = line_height * len(lines) + 10
+
+    img  = Image.new('RGB', (scaled_width, total_height), 'white')
+    draw = ImageDraw.Draw(img)
+
+    y = 5
+    for line in lines:
+        bbox = draw.textbbox((0, 0), line, font=font)
+        x = (scaled_width - (bbox[2] - bbox[0])) // 2
+        draw.text((x, y - bbox[1]), line, fill='black', font=font)
+        y += line_height
+
+    return img.convert('1')
+
+
+def build_acquired_banner_image(
+    total_width: int,
+    text: str = "ADQUIRIDO",
+    font_size: int = 44,
+    padding: int = 10,
+    border_thickness: int = 4,
+    margin: int = 6,
+) -> Image.Image:
+    """
+    Banner con recuadro: ADQUIRIDO
+    Se usa en tickets de taller de órdenes que pasaron a bodega.
+    """
+    tmp = ImageDraw.Draw(Image.new('RGB', (1, 1)))
+
+    # Reducir fuente hasta que quepa el texto
+    font = _font_first(REPUESTOS_FONTS, font_size)
+    while font_size > 16:
+        font = _font_first(REPUESTOS_FONTS, font_size)
+        bbox = tmp.textbbox((0, 0), text, font=font)
+        if (bbox[2] - bbox[0]) + (margin + padding) * 2 <= total_width:
+            break
+        font_size -= 2
+
+    bbox = tmp.textbbox((0, 0), text, font=font)
+    text_w = bbox[2] - bbox[0]
+    text_h = bbox[3] - bbox[1]
+
+    box_h = text_h + padding * 2 + 10
+    img   = Image.new('RGB', (total_width, box_h + 6), 'white')
+    draw  = ImageDraw.Draw(img)
+
+    # Recuadro
+    draw.rectangle(
+        [margin, 2, total_width - margin, box_h + 2],
+        fill=None, outline='black', width=border_thickness,
+    )
+
+    # Texto centrado (compensa offset vertical de fuentes cursivas)
+    x = (total_width - text_w) // 2
+    y = 2 + (box_h - text_h) // 2 - bbox[1]
+    draw.text((x, y), text, fill='black', font=font)
+
+    return img.convert('1')
+
+
+def build_qr_with_phrase_image(
+    qr_img: Image.Image,
+    phrase: str | None,
+    total_width: int,
+    font_size: int = 22,
+    gap: int = 10,
+    margin: int = 4,
+) -> Image.Image:
+    """
+    Si hay frase:  [ frase (izquierda) | QR (derecha) ]
+    Si no hay:     QR centrado, sin espacio en blanco sobrante.
+    """
+    qr_img = qr_img.convert("RGB")
+    qr_w, qr_h = qr_img.size
+
+    # ── Solo QR, centrado ──
+    if not phrase:
+        canvas = Image.new("RGB", (total_width, qr_h), 'white')
+        canvas.paste(qr_img, ((total_width - qr_w) // 2, 0))
+        return canvas.convert('1')
+
+    # ── Frase + QR ──
+    text_w = total_width - qr_w - gap - margin * 2
+    font   = _font_first(REPUESTOS_FONTS, font_size)
+    tmp    = ImageDraw.Draw(Image.new('RGB', (1, 1)))
+
+    # Ajuste de línea por palabras dentro de la columna izquierda
+    lines, current = [], ""
+    for word in phrase.split():
+        test = f"{current} {word}".strip()
+        w = tmp.textbbox((0, 0), test, font=font)[2]
+        if w <= text_w or not current:
+            current = test
+        else:
+            lines.append(current)
+            current = word
+    if current:
+        lines.append(current)
+
+    line_height = font_size + 8
+    text_h      = line_height * len(lines)
+    height      = max(qr_h, text_h)
+
+    canvas = Image.new("RGB", (total_width, height), 'white')
+    draw   = ImageDraw.Draw(canvas)
+
+    # QR a la derecha, centrado verticalmente
+    canvas.paste(qr_img, (total_width - qr_w - margin, (height - qr_h) // 2))
+
+    # Frase a la izquierda, centrada en su columna y verticalmente
+    y = (height - text_h) // 2
+    for line in lines:
+        bbox = draw.textbbox((0, 0), line, font=font)
+        x = margin + (text_w - (bbox[2] - bbox[0])) // 2
+        draw.text((x, y - bbox[1]), line, fill='black', font=font)
+        y += line_height
+
+    return canvas.convert('1')

@@ -24,6 +24,7 @@ poetry run pyinstaller ^
     --name "PrintService" ^
     --add-data "certs;certs" ^
     --add-data "icon.png;." ^
+    --add-data "image.png;." ^
     --collect-data escpos ^
     --hidden-import escpos.printer ^
     --hidden-import escpos.capabilities ^

@@ -281,3 +281,26 @@ async def imprimir_deuda(datos: Dict[str, Any] = Body(...)):
 async def imprimir_pedido(datos: Dict[str, Any] = Body(...)):
     """Placeholder — funcionalidad de impresión de pedido pendiente de implementar."""
     return {"success": True, "message": "Endpoint de pedido deshabilitado temporalmente"}
+
+
+@app.post("/print/acquired")
+async def print_acquired(data: Dict[str, Any] = Body(...)):
+    """Imprime solo el ticket de taller con banner ADQUIRIDO (orden pasó a bodega)."""
+    print(">>> 📥 PAYLOAD RECIBIDO EN /print/acquired:")
+    print(json.dumps(data, indent=2, ensure_ascii=False, default=str))
+
+    try:
+        result = printer_service.print_acquired(data)
+        if not result.get("success", False):
+            raise HTTPException(
+                status_code=500,
+                detail=result.get("message", "Error desconocido al imprimir"),
+            )
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error en servidor al imprimir ticket adquirido: {str(e)}")
+
+
