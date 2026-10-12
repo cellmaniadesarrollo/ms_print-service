@@ -40,7 +40,21 @@ REQUIRED_FIELDS = [
 def safe_str(value: any) -> str:
     """Convierte a string, quita espacios sobrantes y maneja None"""
     return str(value or "").strip()
+def _unwrap_order(data: dict) -> dict:
+    """
+    Si el payload viene como { "order": {...}, "is_copy": ..., "printed_by": ... },
+    devuelve un dict plano: los campos de la orden más los de la raíz.
+    Si ya viene plano (como en /print), lo devuelve tal cual.
+    """
+    order = data.get("order") if isinstance(data, dict) else None
+    if not isinstance(order, dict):
+        return data
 
+    merged = dict(order)
+    for key in ("is_copy", "printed_by", "requested_by", "ticket_type"):
+        if key in data:
+            merged[key] = data[key]
+    return merged
 
 def _validate(data: dict) -> str | None:
     """
@@ -345,6 +359,53 @@ class PrinterService:
         except Exception as e:
             traceback.print_exc()
             msg = f"Error inesperado al imprimir factura: {str(e)}"
+            print(f"✗ {msg}")
+            return {"success": False, "message": msg}
+
+        finally:
+            if printer is not None:
+                try:
+                    printer.close()
+                except Exception:
+                    pass
+
+
+
+    def print_acquired(self, data: dict) -> dict:
+        """Imprime SOLO el ticket de taller con banner ADQUIRIDO (orden pasó a bodega)."""
+        data = _unwrap_order(data)
+
+        error = _validate(data)
+        if error:
+            return {"success": False, "message": error}
+
+        extracted, error = _extract(data, self.config.ticket.qr_base_url)
+        if error:
+            return {"success": False, "message": error}
+
+        printer = None
+        try:
+            printer = open_printer(self.config)
+
+            printer._raw(b'\x1B\x21\x01')
+            printer._raw(b'\x0F')
+
+            print_workshop_ticket(printer, extracted, self.config, acquired=True)
+
+            printer._raw(b'\x12')
+            printer._raw(b'\x1B\x21\x00')
+
+            print("✓ Ticket ADQUIRIDO (taller) impreso")
+            return {"success": True, "message": "Ticket adquirido impreso con éxito"}
+
+        except (DeviceNotFoundError, EscposError) as e:
+            msg = f"No se pudo conectar con la impresora: {e}"
+            print(f"✗ {msg}")
+            return {"success": False, "message": msg}
+
+        except Exception as e:
+            traceback.print_exc()
+            msg = f"Error inesperado al imprimir ticket adquirido: {str(e)}"
             print(f"✗ {msg}")
             return {"success": False, "message": msg}
 

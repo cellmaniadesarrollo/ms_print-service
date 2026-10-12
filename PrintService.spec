@@ -1,12 +1,12 @@
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_data_files
 
-datas = [('certs', 'certs'), ('icon.png', '.')]
+datas = [('certs', 'certs'), ('icon.png', '.'), ('image.png', '.')]
 datas += collect_data_files('escpos')
 
 
 a = Analysis(
-    ['app\\main.py'],
+    ['app/main.py'],
     pathex=[],
     binaries=[],
     datas=datas,
