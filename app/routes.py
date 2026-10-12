@@ -273,8 +273,22 @@ async def imprimir_factura_legacy(datos: Dict[str, Any] = Body(...)):
 
 @app.post("/facturacion/imprimir-deuda")
 async def imprimir_deuda(datos: Dict[str, Any] = Body(...)):
-    """Placeholder — funcionalidad de impresión de deuda pendiente de implementar."""
-    return {"success": True, "message": "Endpoint de deuda deshabilitado temporalmente"}
+    """Imprime comprobante de abono de una cuota de crédito/deuda."""
+    print(">>> 📥 PAYLOAD RECIBIDO EN IMPRIMIR_DEUDA:")
+    print(json.dumps(datos, indent=2, ensure_ascii=False, default=str))
+
+    try:
+        result = printer_service.print_abono_deuda(datos)
+        if not result.get("success", False):
+            msg = result.get("message", "Error al imprimir abono")
+            status = 422 if "inválidos" in msg else 500
+            raise HTTPException(status_code=status, detail=msg)
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error interno imprimiendo abono: {str(e)}")
 
 
 @app.post("/facturacion/imprimir-pedido")
