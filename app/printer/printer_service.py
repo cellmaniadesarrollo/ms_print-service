@@ -23,6 +23,8 @@ from app.printer.schemas import PaymentTicketRequest
 from app.printer.invoice_ticket import print_invoice_ticket
 from app.printer.formatters.factura_formatter import formatear_factura_o_recibo
 from app.printer.models.factura import FacturaPrintRequest
+from app.printer.formatters.abono_deuda_formatter import formatear_abono_deuda
+from app.printer.models.abono_deuda import AbonoDeudaPrintRequest
 
 from escpos.exceptions import Error as EscposError, DeviceNotFoundError
 
@@ -369,7 +371,32 @@ class PrinterService:
                 except Exception:
                     pass
 
+    def print_abono_deuda(self, data: dict) -> dict:
+        try:
+            req = AbonoDeudaPrintRequest(**data)
+        except Exception as e:
+            return {"success": False, "message": f"Datos de abono inválidos: {e}"}
 
+        copies = max(1, min(req.copies or 1, 3))
+        printer = None
+        try:
+            raw_bytes = formatear_abono_deuda(req, ancho_px=self.config.paper_px)
+            printer = open_printer(self.config)
+            for _ in range(copies):
+                printer._raw(raw_bytes)
+            print(f"✓ Abono de crédito {req.credito_id} impreso")
+            return {"success": True, "message": "Comprobante impreso con éxito"}
+        except (DeviceNotFoundError, EscposError) as e:
+            return {"success": False, "message": f"No se pudo conectar con la impresora: {e}"}
+        except Exception as e:
+            traceback.print_exc()
+            return {"success": False, "message": f"Error inesperado: {e}"}
+        finally:
+            if printer is not None:
+                try:
+                    printer.close()
+                except Exception:
+                    pass
 
     def print_acquired(self, data: dict) -> dict:
         """Imprime SOLO el ticket de taller con banner ADQUIRIDO (orden pasó a bodega)."""
