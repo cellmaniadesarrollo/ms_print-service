@@ -4,32 +4,53 @@ TÚNEL + REGISTRO AUTOMÁTICO DE LA URL
 ═══════════════════════════════════════════════════════════════════════════════
 
 ¿Qué hace?
-    1. Abre un túnel de Cloudflare hacia este servicio de impresión.
+    1. Abre UN túnel de Cloudflare hacia este servicio de impresión.
        Cloudflare entrega una URL pública (https://xxxx.trycloudflare.com).
-    2. Le avisa al backend de facturación cuál es esa URL
-       (POST /api/print-endpoints/register).
+    2. Registra esa MISMA URL en uno o varios backends (órdenes, facturas...).
     3. Repite el aviso cada 5 minutos (heartbeat), y si el túnel se cae
        lo vuelve a abrir y avisa la nueva URL.
 
-Sección "tunnel" en config.json:
+Sección "tunnel" en config.json (formato nuevo, varios backends):
     {
       "enabled": true,
-      "backend_url": "https://TU-BACKEND.com",
-      "register_key": "<mismo valor que PRINT_REGISTER_KEY del backend>",
-      "company_id": "e72d7d55-...",
-      "code_establecimiento": "001",
       "cloudflared_path": "cloudflared",
-      "verify_ssl": true
+      "verify_ssl": false,
+      "registrations": [
+        {
+          "name": "ordenes",
+          "backend_url": "http://localhost:3000",
+          "register_key": "<mismo valor que PRINT_REGISTER_KEY del backend>",
+          "company_id": "613d64b9-...",
+          "code_establecimiento": "001"
+        },
+        {
+          "name": "facturas",
+          "backend_url": "https://localhost:4500",
+          "register_key": "<clave>",
+          "company_id": "e72d7d55-...",
+          "code_establecimiento": "001",
+          "register_path": "/api/print-endpoints/register"
+        }
+      ]
     }
+
+    Campos opcionales por registro:
+        enabled        → false para saltarse ese backend
+        register_path  → por defecto "/print-endpoints/register"
+        verify_ssl     → por defecto hereda el valor global
+
+Formato antiguo (campos planos backend_url, register_key, company_id,
+code_establecimiento dentro de "tunnel") sigue funcionando.
 
     verify_ssl:
         true  → verifica el certificado del backend (producción).
         false → NO verifica. Solo para desarrollo con backend local
-                que tenga certificado autofirmado (https://localhost:4500).
+                que tenga certificado autofirmado.
 
 Flujo completo:
     .exe arranca → cloudflared abre túnel → tunnel.py detecta la URL
-    → la registra INMEDIATAMENTE en el backend (sin esperar reachability)
+    → la registra INMEDIATAMENTE en cada backend (cada uno con sus propios
+      reintentos; si uno está caído no bloquea a los demás)
     → en paralelo verifica que el túnel responda (solo diagnóstico)
     → cada 5 min re-registra la URL (heartbeat)
     → si cloudflared muere, se relanza y registra la nueva URL
@@ -65,69 +86,107 @@ def _load_tunnel_cfg() -> dict:
 
 _cfg = _load_tunnel_cfg()
 
-TUNNEL_ENABLED  = _cfg.get("enabled", True)
-BACKEND_URL     = _cfg.get("backend_url", "").rstrip("/")
-REGISTER_KEY    = _cfg.get("register_key", "")
-COMPANY_ID      = _cfg.get("company_id", "")
-ESTABLECIMIENTO = str(_cfg.get("code_establecimiento", "001")).zfill(3)
-CLOUDFLARED     = _cfg.get("cloudflared_path", "cloudflared")
-VERIFY_SSL      = _cfg.get("verify_ssl", True)
-HEARTBEAT_SEC   = 300   # cada 5 minutos se re-registra la URL en el backend
+TUNNEL_ENABLED = _cfg.get("enabled", True)
+CLOUDFLARED    = _cfg.get("cloudflared_path", "cloudflared")
+VERIFY_SSL     = _cfg.get("verify_ssl", True)
+HEARTBEAT_SEC  = 300   # cada 5 minutos se re-registra la URL en los backends
 
-if not VERIFY_SSL:
+
+def _build_registrations(cfg: dict) -> list[dict]:
+    """
+    Lista de backends donde registrar la URL.
+    Acepta el formato nuevo ("registrations": [...]) y el antiguo
+    (campos planos dentro de "tunnel").
+    """
+    regs = cfg.get("registrations")
+    if not regs:
+        regs = [{
+            "name":                 "default",
+            "backend_url":          cfg.get("backend_url", ""),
+            "register_key":         cfg.get("register_key", ""),
+            "company_id":           cfg.get("company_id", ""),
+            "code_establecimiento": cfg.get("code_establecimiento", "001"),
+        }]
+
+    out = []
+    for r in regs:
+        if not r.get("enabled", True):
+            continue
+        out.append({
+            "name":            r.get("name", r.get("backend_url", "?")),
+            "backend_url":     r.get("backend_url", "").rstrip("/"),
+            "register_key":    r.get("register_key", ""),
+            "company_id":      str(r.get("company_id", "")),
+            "establecimiento": str(r.get("code_establecimiento", "001")).zfill(3),
+            "path":            r.get("register_path", "/print-endpoints/register"),
+            "verify_ssl":      r.get("verify_ssl", VERIFY_SSL),
+        })
+    return out
+
+
+REGISTRATIONS = _build_registrations(_cfg)
+
+if any(not r["verify_ssl"] for r in REGISTRATIONS):
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-    print("[TUNNEL] ⚠️  verify_ssl=false → certificado del backend no verificado (solo desarrollo)")
+    print("[TUNNEL] ⚠️  verify_ssl=false en algún backend (solo desarrollo)")
+
+print(
+    "[TUNNEL] Backends de registro: "
+    + (", ".join(r["name"] for r in REGISTRATIONS) or "ninguno")
+)
 
 # Evita que se lancen dos túneles si algo llama a start_tunnel_in_thread dos veces
 _started      = False
 _started_lock = threading.Lock()
 
-# ─── Registro en el backend de facturas ──────────────────────────────────────
+# ─── Registro en los backends ────────────────────────────────────────────────
 
-def register(url: str) -> bool:
+def register_one(reg: dict, url: str) -> bool:
     """
-    POST /api/print-endpoints/register → backend Node.js (ms_facturas).
-    El router de Express guarda la URL en la colección printendpoints.
-    Devuelve True si el backend respondió 2xx.
-
-    El tunnel.py NO crea ningún registro propio: delega 100% en el
-    backend de facturas, que es quien conoce la colección y la lógica
-    de upsert por (company_id, code_establecimiento).
+    POST {backend_url}{path} a UN backend.
+    Devuelve True si respondió 2xx.
     """
-    if not BACKEND_URL or not REGISTER_KEY or not COMPANY_ID:
-        print("[TUNNEL] ❌ Falta backend_url, register_key o company_id en config.json")
+    name = reg["name"]
+    if not reg["backend_url"] or not reg["register_key"] or not reg["company_id"]:
+        print(f"[TUNNEL] ❌ [{name}] Falta backend_url, register_key o company_id")
         return False
 
     try:
         resp = requests.post(
-            f"{BACKEND_URL}/api/print-endpoints/register",
+            f"{reg['backend_url']}{reg['path']}",
             json={
-                "company_id":           COMPANY_ID,
-                "code_establecimiento": ESTABLECIMIENTO,
+                "company_id":           reg["company_id"],
+                "code_establecimiento": reg["establecimiento"],
                 "url":                  url,
             },
             headers={
-                "x-api-key":    REGISTER_KEY,
-                "Content-Type": "application/json",
+                "x-register-key": reg["register_key"],
+                "Content-Type":   "application/json",
             },
             timeout=10,
-            verify=VERIFY_SSL,
+            verify=reg["verify_ssl"],
         )
 
         if resp.ok:
-            print(f"[TUNNEL] ✅ URL registrada en backend de facturas: {url}")
+            print(f"[TUNNEL] ✅ [{name}] URL registrada: {url}")
             return True
 
-        print(f"[TUNNEL] ❌ Backend respondió {resp.status_code}: {resp.text}")
+        print(f"[TUNNEL] ❌ [{name}] respondió {resp.status_code}: {resp.text}")
 
     except requests.exceptions.ConnectionError as e:
-        print(f"[TUNNEL] ❌ No se pudo conectar al backend: {e}")
+        print(f"[TUNNEL] ❌ [{name}] no se pudo conectar: {e}")
     except requests.exceptions.Timeout:
-        print("[TUNNEL] ❌ Timeout al registrar URL en el backend")
+        print(f"[TUNNEL] ❌ [{name}] timeout al registrar")
     except Exception as e:
-        print(f"[TUNNEL] ❌ Error inesperado al registrar: {e}")
+        print(f"[TUNNEL] ❌ [{name}] error inesperado: {e}")
 
     return False
+
+
+def register_all(url: str) -> None:
+    """Un solo intento en todos los backends (lo usa el heartbeat)."""
+    for reg in REGISTRATIONS:
+        register_one(reg, url)
 
 # ─── Verificación de accesibilidad (solo diagnóstico) ────────────────────────
 
@@ -137,12 +196,8 @@ def _wait_until_reachable(url: str, tries: int = 20) -> bool:
     Cloudflare tarda unos segundos en propagar el túnel nuevo, así que
     esta función espera hasta ~20s antes de rendirse.
 
-    IMPORTANTE: esta función es solo diagnóstico. El registro en el
-    backend ya ocurrió en on_url() sin esperar este resultado, para
-    que la URL quede disponible lo antes posible.
-
-    Se loguea cada intento para poder diagnosticar si hay redirecciones
-    o respuestas inesperadas de Cloudflare.
+    IMPORTANTE: esta función es solo diagnóstico. El registro en los
+    backends ya ocurre en on_url() sin esperar este resultado.
     """
     print(f"[TUNNEL] ⏳ Verificando accesibilidad pública: {url}/api/status")
     for attempt in range(1, tries + 1):
@@ -157,7 +212,6 @@ def _wait_until_reachable(url: str, tries: int = 20) -> bool:
             if r.ok:
                 print(f"[TUNNEL] 🌐 Túnel accesible públicamente tras ~{attempt}s")
                 return True
-            # Loguea la respuesta para diagnosticar 404, 530, etc.
             print(f"[TUNNEL] ⏳ Intento {attempt}/{tries}: HTTP {r.status_code}")
         except Exception as e:
             print(f"[TUNNEL] ⏳ Intento {attempt}/{tries}: {type(e).__name__}: {e}")
@@ -221,33 +275,33 @@ def tunnel_supervisor(tunnel_port: int) -> None:
 
     Flujo por iteración:
       1. _run_cloudflared detecta la URL pública y llama on_url().
-      2. on_url() registra la URL en el backend INMEDIATAMENTE (sin esperar
-         que sea accesible), y en paralelo verifica accesibilidad.
-      3. heartbeat() re-registra la URL cada HEARTBEAT_SEC segundos para
-         que el backend no la pierda si reinicia.
+      2. on_url() lanza un hilo de registro POR BACKEND (cada uno reintenta
+         cada 10s hasta lograrlo) y en paralelo verifica accesibilidad.
+      3. heartbeat() re-registra la URL en todos los backends cada
+         HEARTBEAT_SEC segundos.
       4. Si cloudflared muere → current["url"] = None → se relanza → nueva
-         URL → nuevo registro. El loop de registro de la URL vieja se
-         detiene solo gracias a `current["url"] == url`.
+         URL → nuevo registro. Los reintentos de la URL vieja se detienen
+         solos gracias a `current["url"] == url`.
     """
     current = {"url": None}
 
     def on_url(url: str) -> None:
-        """
-        Callback que se ejecuta cuando cloudflared publica la URL.
-        Registra inmediatamente en el backend sin esperar reachability,
-        para minimizar el tiempo en que el backend tiene una URL obsoleta.
-        En paralelo verifica accesibilidad (solo para diagnóstico en logs).
-        """
         current["url"] = url
-        print(f"[TUNNEL] 📡 Nueva URL detectada: {url} — registrando en backend...")
+        print(f"[TUNNEL] 📡 Nueva URL detectada: {url} — registrando en backends...")
 
-        # Registro inmediato: reintenta cada 10s hasta que el backend lo acepte,
-        # pero para si la URL cambió (cloudflared se reconectó con una URL nueva)
-        while current["url"] == url and not register(url):
-            time.sleep(10)
+        def _register_until_ok(reg: dict) -> None:
+            # Reintenta cada 10s; se detiene si la URL cambió
+            while current["url"] == url and not register_one(reg, url):
+                time.sleep(10)
 
-        # Verificación de accesibilidad en paralelo: solo diagnóstico,
-        # no bloquea ni retrasa el registro
+        for reg in REGISTRATIONS:
+            threading.Thread(
+                target=_register_until_ok,
+                args=(reg,),
+                daemon=True,
+            ).start()
+
+        # Verificación de accesibilidad: solo diagnóstico
         threading.Thread(
             target=_wait_until_reachable,
             args=(url,),
@@ -255,15 +309,12 @@ def tunnel_supervisor(tunnel_port: int) -> None:
         ).start()
 
     def heartbeat() -> None:
-        """
-        Re-registra la URL actual cada HEARTBEAT_SEC segundos.
-        Útil si el backend reinicia y pierde la URL de la colección.
-        """
+        """Re-registra la URL actual en todos los backends cada HEARTBEAT_SEC."""
         while True:
             time.sleep(HEARTBEAT_SEC)
             url = current["url"]
             if url:
-                register(url)
+                register_all(url)
 
     threading.Thread(target=heartbeat, daemon=True).start()
 
