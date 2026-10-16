@@ -59,6 +59,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.middleware("http")
+async def allow_private_network(request, call_next):
+    response = await call_next(request)
+    if request.headers.get("access-control-request-private-network"):
+        response.headers["Access-Control-Allow-Private-Network"] = "true"
+    return response
 
 def _get_executable_dir() -> str:
     """
@@ -119,6 +125,26 @@ async def get_status():
         "uptime_seconds": round(time.time() - _start_time),
     }
 
+def _get_codigo_establecimiento() -> str | None:
+    """Lee el code_establecimiento de config.json (registro 'ordenes', o el primero)."""
+    try:
+        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+        regs = (raw.get("tunnel") or {}).get("registrations", [])
+        for r in regs:
+            if r.get("name") == "ordenes":
+                return r.get("code_establecimiento")
+        return regs[0].get("code_establecimiento") if regs else None
+    except Exception:
+        return None
+
+
+@app.get("/api/ping")
+async def ping():
+    return {
+        "ok": True,
+        "code_establecimiento": _get_codigo_establecimiento(),
+    }
 
 @app.get("/api/config")
 async def get_config_raw():
