@@ -248,24 +248,21 @@ def _update_scheduler() -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def start() -> None:
-    """
-    Orquesta el arranque completo de la aplicación en el orden correcto.
+    # El updater solo tiene sentido en el .exe de Windows.
+    # En desarrollo (poetry run dev, Linux) se salta para no entrar en bucle.
+    updater_enabled = (
+        os.getenv("DISABLE_UPDATER") != "1"
+        and getattr(sys, "frozen", False)
+        and sys.platform == "win32"
+    )
 
-    Llamada por el bloque __main__ y como entrypoint de Poetry:
-        [tool.poetry.scripts]
-        dev = "app.main:start"
-    """
+    if updater_enabled:
+        check_for_update()
+        threading.Thread(target=_update_scheduler, daemon=True).start()
+    else:
+        print("[INFO] Updater desactivado (modo desarrollo / no Windows)")
 
-    # Revisión inmediata al arrancar
-    check_for_update()
-
-    # Scheduler en hilo daemon — revisa cada UPDATE_INTERVAL_MINUTES
-    threading.Thread(target=_update_scheduler, daemon=True).start()
-
-    # Servidor HTTPS en hilo daemon
     run_server_in_thread(app)
-
-    # Bandeja del sistema — BLOQUEANTE, siempre al final
     setup_tray()
 
 
