@@ -29,6 +29,7 @@ from app.printer.models.abono_deuda import AbonoDeudaPrintRequest
 from escpos.exceptions import Error as EscposError, DeviceNotFoundError
 
 TZ_EC = timezone(timedelta(hours=-5))
+ORDER_TYPES_WITHOUT_WORKSHOP = {"PARA REPUESTOS"}
 
 # Campos strictly necesarios en el payload de órdenes de servicio
 REQUIRED_FIELDS = [
@@ -240,6 +241,15 @@ class PrinterService:
         if ticket_type not in ("customer", "workshop", "both"):
             ticket_type = "both"
 
+        # Las órdenes PARA REPUESTOS no llevan ticket de taller
+        skip_workshop = extracted["order_type"] in ORDER_TYPES_WITHOUT_WORKSHOP
+
+        if skip_workshop and ticket_type == "workshop":
+            return {
+                "success": True,
+                "message": "Las órdenes PARA REPUESTOS no llevan ticket de taller",
+            }
+
         printer = None
         try:
             printer = open_printer(self.config)
@@ -249,13 +259,13 @@ class PrinterService:
 
             if ticket_type in ("customer", "both"):
                 print_customer_ticket(printer, extracted, self.config)
-            if ticket_type in ("workshop", "both"):
+            if ticket_type in ("workshop", "both") and not skip_workshop:
                 print_workshop_ticket(printer, extracted, self.config)
 
             printer._raw(b'\x12')
             printer._raw(b'\x1B\x21\x00')
 
-            print(f"✓ Impresión REAL completada ({ticket_type})")
+            print(f"✓ Impresión REAL completada ({ticket_type}, skip_workshop={skip_workshop})")
             return {"success": True, "message": "Ticket impreso con éxito"}
 
         except (DeviceNotFoundError, EscposError) as e:
@@ -417,7 +427,7 @@ class PrinterService:
             printer._raw(b'\x1B\x21\x01')
             printer._raw(b'\x0F')
 
-            print_workshop_ticket(printer, extracted, self.config, acquired=True)
+            # print_workshop_ticket(printer, extracted, self.config, acquired=True)
 
             printer._raw(b'\x12')
             printer._raw(b'\x1B\x21\x00')
