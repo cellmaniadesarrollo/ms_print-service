@@ -13,10 +13,7 @@ TÚNEL NGROK + REGISTRO AUTOMÁTICO DE LA URL
 Modo LOCAL: lo atiende el servidor HTTPS local (no usa este archivo).
 Modo NUBE : este archivo abre ngrok. Para solo local: "enabled": false.
 
-Variables de entorno (.env junto al .exe) — tienen prioridad sobre config.json:
-    TOKEN_NGROK (o NGROK_AUTHTOKEN), NGROK_DOMAIN, NGROK_PATH (opc.),
-    PRINT_SECRET (clave común si el registro no trae register_key),
-    CODE_ESTABLECIMIENTO (opc., para 001/002 por PC sin tocar config.json)
+Toda la configuración sale de config.json (no usa variables de entorno ni .env).
 
 Sección "tunnel" en config.json:
     {
@@ -29,7 +26,7 @@ Sección "tunnel" en config.json:
         {
           "name": "ordenes",
           "backend_url": "http://localhost:3000",
-          "register_key": "<PRINT_REGISTER_KEY>",
+          "register_key": "<clave de registro del backend>",
           "company_id": "613d64b9-...",
           "code_establecimiento": "001"
         }
@@ -63,14 +60,6 @@ def _base_dir() -> str:
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
-# Carga el .env (junto al .exe o en la raíz). No pisa variables ya definidas.
-try:
-    from dotenv import load_dotenv
-    load_dotenv(os.path.join(_base_dir(), ".env"))
-except ImportError:
-    pass
-
-
 def _load_tunnel_cfg() -> dict:
     """Lee la sección 'tunnel' del config.json (junto al .exe o en la raíz)."""
     cfg_path = os.path.join(_base_dir(), "config.json")
@@ -81,20 +70,10 @@ def _load_tunnel_cfg() -> dict:
 _cfg = _load_tunnel_cfg()
 
 
-def _env_or_cfg(env_name: str, cfg_key: str, default=""):
-    """Prioridad: variable de entorno / .env  →  config.json  →  default."""
-    val = os.getenv(env_name)
-    if val is not None and val.strip() != "":
-        return val.strip()
-    return _cfg.get(cfg_key, default)
-
 TUNNEL_ENABLED = _cfg.get("enabled", True)
-NGROK_TOKEN    = (os.getenv("TOKEN_NGROK", "").strip()
-                  or _env_or_cfg("NGROK_AUTHTOKEN", "ngrok_authtoken"))
-NGROK_DOMAIN   = str(_env_or_cfg("NGROK_DOMAIN", "ngrok_domain")).strip()
-NGROK_PATH     = str(_env_or_cfg("NGROK_PATH", "ngrok_path")).strip()
-# Clave de registro común (se usa si un registro no trae la suya en config.json)
-REGISTER_KEY_ENV = os.getenv("PRINT_SECRET", "").strip()
+NGROK_TOKEN    = str(_cfg.get("ngrok_authtoken", "")).strip()
+NGROK_DOMAIN   = str(_cfg.get("ngrok_domain", "")).strip()
+NGROK_PATH     = str(_cfg.get("ngrok_path", "")).strip()
 VERIFY_SSL     = _cfg.get("verify_ssl", True)
 HEARTBEAT_SEC  = 300   # cada 5 minutos se re-registra la URL
 
@@ -118,11 +97,9 @@ def _build_registrations(cfg: dict) -> list[dict]:
         out.append({
             "name":            r.get("name", r.get("backend_url", "?")),
             "backend_url":     r.get("backend_url", "").rstrip("/"),
-            "register_key":    r.get("register_key", "") or REGISTER_KEY_ENV,
+            "register_key":    str(r.get("register_key") or cfg.get("register_key") or "").strip(),
             "company_id":      str(r.get("company_id", "")),
-            "establecimiento": str(
-                os.getenv("CODE_ESTABLECIMIENTO") or r.get("code_establecimiento", "001")
-            ).zfill(3),
+            "establecimiento": str(r.get("code_establecimiento", "001")).zfill(3),
             "path":            r.get("register_path", "/print-endpoints/register"),
             "verify_ssl":      r.get("verify_ssl", VERIFY_SSL),
         })
@@ -134,6 +111,15 @@ REGISTRATIONS = _build_registrations(_cfg)
 if any(not r["verify_ssl"] for r in REGISTRATIONS):
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     print("[TUNNEL] ⚠️  verify_ssl=false en algún backend (solo desarrollo)")
+
+import os as _os
+print(f"[TUNNEL] config.json leído: {_os.path.join(_base_dir(), 'config.json')}")
+for _r in REGISTRATIONS:
+    print(
+        f"[TUNNEL]   · {_r['name']}: backend_url={'OK' if _r['backend_url'] else 'VACÍO'}, "
+        f"register_key={'OK' if _r['register_key'] else 'VACÍO'}, "
+        f"company_id={'OK' if _r['company_id'] else 'VACÍO'}"
+    )
 
 print(
     "[TUNNEL] Backends de registro: "
@@ -150,14 +136,14 @@ def register_one(reg: dict, url: str) -> bool:
     name = reg["name"]
     faltan = [k for k, label in (
         ("backend_url", "backend_url (config.json)"),
-        ("register_key", "PRINT_SECRET (.env) o register_key (config.json)"),
+        ("register_key", "register_key (config.json)"),
         ("company_id", "company_id (config.json)"),
     ) if not reg[k]]
     if faltan:
         print(f"[TUNNEL] ❌ [{name}] Falta: " + ", ".join(
             label for k, label in (
                 ("backend_url", "backend_url (config.json)"),
-                ("register_key", "PRINT_SECRET (.env) o register_key (config.json)"),
+                ("register_key", "register_key (config.json)"),
                 ("company_id", "company_id (config.json)"),
             ) if k in faltan))
         return False
@@ -232,8 +218,7 @@ def _run_ngrok(tunnel_port: int, on_url) -> None:
 
     if not NGROK_TOKEN:
         raise RuntimeError(
-            "Falta el token de ngrok: TOKEN_NGROK en el .env "
-            "(o 'ngrok_authtoken' en config.json)."
+            "Falta 'ngrok_authtoken' en config.json (sección tunnel)."
         )
 
     cfg = conf.get_default()
