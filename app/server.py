@@ -81,6 +81,15 @@ def run_server(app) -> None:
     port = int(os.getenv("PORT", "56789"))
     tunnel_port = int(os.getenv("TUNNEL_PORT", "56790"))
 
+    # ── NUEVO: registra por cuál puerto entra cada petición ──────────────
+    @app.middleware("http")
+    async def log_origen(request, call_next):
+        puerto = (request.scope.get("server") or (None, None))[1]
+        via = "NGROK" if puerto == tunnel_port else "LOCAL"
+        print(f"[REQ] {via} {request.method} {request.url.path}")
+        return await call_next(request)
+    # ─────────────────────────────────────────────────────────────────────
+
     # Rutas del certificado SSL (solo lo usa el puerto HTTPS)
     key_file  = os.getenv("SSL_KEYFILE",  "certs/server.key")
     cert_file = os.getenv("SSL_CERTFILE", "certs/server.pem")
