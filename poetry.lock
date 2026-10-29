@@ -1333,6 +1333,24 @@ files = [
 packaging = ">=22.0"
 
 [[package]]
+name = "pyngrok"
+version = "9.1.0"
+description = "The complete ngrok agent for Python: programmatic tunnels for ingress, inspection, webhooks, demos, and APIs"
+optional = false
+python-versions = ">=3.9"
+files = [
+    {file = "pyngrok-9.1.0-py3-none-any.whl", hash = "sha256:c7b71b584502ea57675d0b590e99543971e6a6d671b43522154c675a05736c81"},
+    {file = "pyngrok-9.1.0.tar.gz", hash = "sha256:8d9a521d3df29ad3f41523be13f1ef0790592605764d87605937aab20ff67daa"},
+]
+
+[package.dependencies]
+PyYAML = ">=6.0.3"
+
+[package.extras]
+dev = ["coverage[toml]", "flake8", "flake8-pyproject", "pep8-naming", "psutil", "pytest"]
+docs = ["Sphinx", "furo", "mypy", "sphinx-notfound-page", "sphinx-sitemap", "sphinx-substitution-extensions", "sphinx_autodoc_typehints", "sphinxext-opengraph", "types-PyYAML"]
+
+[[package]]
 name = "pyobjc-core"
 version = "12.2.2"
 description = "Python<->ObjC Interoperability Module"
@@ -2356,4 +2374,4 @@ files = [
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.12,<3.15"
-content-hash = "5dae1ff2365a8abf1bacbcc87dc1818d6c8cc82e6d3f61eb72851e7a385937ae"
+content-hash = "a062788dfe520a20a1798f760fa01f338d8ecc82c28ba1df21c6661740ebe0f7"

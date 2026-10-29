@@ -32,23 +32,19 @@
     "printWednesdayPromo": true
   },
   "tunnel": {
-    "cloudflared_path": "/usr/local/bin/cloudflared-clean",
+    "enabled": true,
     "verify_ssl": false,
     "registrations": [
       {
         "name": "facturas",
         "backend_url": "https://localhost:4500",
-        "register_key": "2818cbfc6f2ce4bfe81b209adc2519d7fcbde5ad235f34dda8cbb285a5b4b664a0bb08291bf6ddca8ecd20f31f31d1bd",
-        "company_id": "e72d7d55-a99f-46d5-999e-21af4c5e4831",
-        "code_establecimiento": "001",
+        "company_id": "613d64b9-c8fb-4e72-b5b9-0bb035c4cf6f",
         "register_path": "/api/print-endpoints/register"
       },
       {
         "name": "ordenes",
         "backend_url": "http://localhost:3000",
-        "register_key": "2818cbfc6f2ce4bfe81b209adc2519d7fcbde5ad235f34dda8cbb285a5b4b664a0bb08291bf6ddca8ecd20f31f31d1bd",
-        "company_id": "613d64b9-c8fb-4e72-b5b9-0bb035c4cf6f",
-        "code_establecimiento": "001"
+        "company_id": "613d64b9-c8fb-4e72-b5b9-0bb035c4cf6f"
       }
     ]
   }
