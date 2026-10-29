@@ -33,18 +33,22 @@
   },
   "tunnel": {
     "enabled": true,
+    "ngrok_authtoken": "3LNlHfuPt0F1UOkHDLLhHl8yo20_6KpdHXYM5yTUBZ9Y8j6mj",
+    "ngrok_domain": "shortwave-unplowed-capillary.ngrok-free.dev",
     "verify_ssl": false,
     "registrations": [
       {
         "name": "facturas",
         "backend_url": "https://localhost:4500",
         "company_id": "613d64b9-c8fb-4e72-b5b9-0bb035c4cf6f",
+        "code_establecimiento": "001",
         "register_path": "/api/print-endpoints/register"
       },
       {
         "name": "ordenes",
         "backend_url": "http://localhost:3000",
-        "company_id": "613d64b9-c8fb-4e72-b5b9-0bb035c4cf6f"
+        "company_id": "613d64b9-c8fb-4e72-b5b9-0bb035c4cf6f",
+        "code_establecimiento": "001"
       }
     ]
   }
