@@ -28,6 +28,8 @@ from app.printer.image_builder import (
 from app.printer.copy_box_text import print_copy_box_text  
 import random
 from app.constants import LOGO_TEAMCELL_PERSONALIZADO_B64, MOTIVATIONAL_PHRASES
+from app.promotions import get_active_promotions
+from app.printer.promo_image import build_promo_box_image
 def _assets_path() -> Path:
     return Path(__file__).parent.parent.parent / "assets"
 
@@ -91,9 +93,11 @@ def print_customer_ticket(printer, data: dict, config: AppConfig) -> None:
     es_servicio_tecnico = data.get('order_type') == "SERVICIO TECNICO"
     es_repuestos        = data.get('order_type') == "PARA REPUESTOS"
 
-    if feat.print_wednesday_promo and es_miercoles and es_servicio_tecnico and ticket.wednesday_promo:
-        printer.set(align="center", bold=False, font='b', width=1, height=1)
-        printer.text(f"{ticket.wednesday_promo}\n")
+    if feat.print_wednesday_promo and es_servicio_tecnico:
+        entry_date = data['entry_dt'].date() if hasattr(data['entry_dt'], 'date') else data['entry_dt']
+        for promo in get_active_promotions(entry_date):
+            printer.set(align="left")
+            printer.image(build_promo_box_image(promo.lines, total_width), center=False)
 
     printer.set(align="center", bold=True, font='b', width=1, height=1)
     printer.text(f"{data['entry_date_str']} | No. {data['order_number']}\n")

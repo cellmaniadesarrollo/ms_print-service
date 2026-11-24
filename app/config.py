@@ -11,6 +11,9 @@ Estructura de archivos esperada:
 
 Ver CONFIG_GUIDE.txt en la raíz para la documentación completa
 de todas las opciones disponibles.
+
+Nota: los textos de las promociones (miércoles, Black Friday, etc.) ya NO viven
+aquí; se gestionan a nivel de código en app/promotions.py.
 """
 
 import json
@@ -47,7 +50,6 @@ class TicketLayout:
 class TicketConfig:
     layout: TicketLayout
     footer_lines: list[str]   # líneas del pie del ticket del cliente
-    wednesday_promo: str      # texto promo miércoles (vacío = sin promo)
     qr_base_url: str          # URL base para el QR de seguimiento
 
 
@@ -56,7 +58,7 @@ class Features:
     print_analysis_image: bool       # imprimir assets/analisis.png
     print_qr: bool                   # imprimir código QR
     print_pattern_on_customer: bool  # mostrar patrón en texto en ticket cliente
-    print_wednesday_promo: bool      # activar promo del miércoles
+    print_wednesday_promo: bool      # interruptor general de promociones (ver app/promotions.py)
 
 
 @dataclass
@@ -142,7 +144,6 @@ def _parse_ticket(raw: dict) -> TicketConfig:
     ticket = raw.get("ticket") or {}
     layout = ticket.get("workshopLayout") or {}
     footer = ticket.get("footer") or {}
-    promos = ticket.get("promotions") or {}
 
     default_footer = [
         "- Costo minimo revision: $4 (puede variar)",
@@ -158,7 +159,6 @@ def _parse_ticket(raw: dict) -> TicketConfig:
             text_pct=int(layout.get("textPct", 80)),
         ),
         footer_lines=footer.get("lines") or default_footer,
-        wednesday_promo=promos.get("wednesday", "*** HOY MICA GRATIS ***"),
         qr_base_url=(ticket.get("qrBaseUrl") or "").rstrip("/"),
     )
 

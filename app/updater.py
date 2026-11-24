@@ -5,12 +5,18 @@ MÓDULO DE ACTUALIZACIONES AUTOMÁTICAS — distribución por ZIP
 
 Flujo:
     1. GitHub API → obtiene latest tag
-    2. Compara con CURRENT_VERSION
-    3. Si hay update → descarga PrintService.zip en dist\
+    2. Compara con CURRENT_VERSION (si es DISTINTA → actualiza o hace rollback)
+    3. Si hay cambio → descarga PrintService.zip en dist\
     4. Verifica tamaño del archivo descargado
     5. Escribe pending_update.bat en dist\
     6. os._exit(0) → cierra PrintService
     7. Launcher muestra splash → ejecuta .bat → relanza
+
+Rollback:
+    Para volver a una versión anterior (ej. de 1.1.18 a 1.1.17), basta con
+    marcar esa release como "Latest" en GitHub. Como el tag es distinto a
+    CURRENT_VERSION, el updater descargará ese ZIP y reemplazará la versión
+    instalada.
 
 Estructura en disco:
     dist\
@@ -34,9 +40,10 @@ import requests
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Constantes — ACTUALIZA CURRENT_VERSION EN CADA RELEASE
+# (debe coincidir SIEMPRE con el tag de la release en GitHub)
 # ─────────────────────────────────────────────────────────────────────────────
 
-CURRENT_VERSION: str = "1.1.16"
+CURRENT_VERSION: str = "1.2.5"
 UPDATE_INTERVAL_MINUTES: int = 1       # ← 1 beta, 360 producción
 
 REPO_OWNER: str = "cellmaniadesarrollo"
@@ -50,7 +57,7 @@ ASSET_NAME: str = "PrintService.zip"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Helper
+# Helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _get_base_dir() -> str:
@@ -61,6 +68,14 @@ def _get_base_dir() -> str:
     if getattr(sys, 'frozen', False):
         return os.path.dirname(sys.executable)
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _parse_version(v: str) -> tuple:
+    """'1.1.18' -> (1, 1, 18). Si no es numérica, devuelve tupla vacía."""
+    try:
+        return tuple(int(x) for x in v.strip().lstrip("v").split("."))
+    except ValueError:
+        return ()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -96,12 +111,19 @@ def check_for_update() -> None:
             print("[WARN] No se encontró tag en la última release")
             return
 
-        # ── 2. Comparar versiones ─────────────────────────────────────────────
-        if latest_tag <= CURRENT_VERSION:
+        # ── 2. Comparar versiones (distinta → update o rollback) ──────────────
+        if latest_tag == CURRENT_VERSION:
             print(f"[INFO] Versión actualizada → v{CURRENT_VERSION} (GitHub: v{latest_tag})")
             return
 
-        print(f"[UPDATE] ¡Nueva versión disponible! v{latest_tag} > v{CURRENT_VERSION}")
+        latest_parsed  = _parse_version(latest_tag)
+        current_parsed = _parse_version(CURRENT_VERSION)
+
+        if latest_parsed and current_parsed and latest_parsed < current_parsed:
+            print(f"[ROLLBACK] GitHub marca v{latest_tag} como Latest "
+                  f"(instalada: v{CURRENT_VERSION}) → volviendo atrás")
+        else:
+            print(f"[UPDATE] ¡Nueva versión disponible! v{latest_tag} (instalada: v{CURRENT_VERSION})")
 
         # ── 3. Buscar el asset ZIP ────────────────────────────────────────────
         asset_url     = None
